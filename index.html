@@ -165,6 +165,8 @@
   @media (prefers-reduced-motion: reduce){ .page{ animation:none; } }
 
   /* schedule page */
+  .sched-date{ font-size:30px; font-weight:600; line-height:1.15; }
+  .sched-sub{ font-size:13px; color:var(--ink-soft); margin-top:3px; }
   .sched-topline{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
   .sched-actions{ display:flex; gap:8px; }
   .sched-warn{
@@ -281,12 +283,12 @@ import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/f
    データ (別コレクション) とは衝突しません。
    ========================================================= */
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyCaWY0-3hmkVP4y-91L36lbRHma2jczOqI",
+  authDomain: "family-schedule-board.firebaseapp.com",
+  projectId: "family-schedule-board",
+  storageBucket: "family-schedule-board.firebasestorage.app",
+  messagingSenderId: "46781366760",
+  appId: "1:46781366760:web:5bdf93d3ba212342b2e45d"
 };
 
 let db = null;
@@ -337,61 +339,83 @@ function parseMeetingsText(text) {
   return { meetings, unrecognized };
 }
 
-function defaultState(dateStr) {
+function defaultDateState(dateStr) {
   return {
     date: dateStr,
-    tasks: [],
-    placementOrder: [],
     meetingsText: '',
     workStart: '09:00',
     workEnd: '18:00',
     lunchStart: '12:00',
     lunchEnd: '13:00',
-    page: 'input',
+    scheduleTasks: [],   // その日にスケジューリングした時点のタスクのスナップショット(並び順=配置順)
+    generated: false,    // その日がスケジューリング済みかどうか
   };
 }
 
-let state = defaultState(fmtDate(new Date()));
-let unsubscribe = null;
-let saveTimer = null;
+// state.masterTasks: 日付に関係なく持ち越される、やることリスト本体
+// state.date 以下の各フィールド: その日固有の会議・業務時間・生成済みスケジュール
+let state = { masterTasks: [], page: 'input', ...defaultDateState(fmtDate(new Date())) };
+
+function resetDateFields(dateStr) { Object.assign(state, defaultDateState(dateStr)); }
+
+let unsubscribeMaster = null;
+let unsubscribeDate = null;
+let saveTimerDate = null;
+let saveTimerMaster = null;
 let syncState = cloudEnabled ? 'ok' : 'off';
 
 /* =========================================================
    Firestore sync
    ========================================================= */
-function attachListener(dateStr) {
+function attachMasterListener() {
   if (!cloudEnabled) return;
-  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  const ref = doc(db, 'dailyPlannerTasks', 'main');
+  unsubscribeMaster = onSnapshot(ref, (snap) => {
+    if (snap.metadata.hasPendingWrites) return;
+    state.masterTasks = snap.exists() ? (snap.data().tasks || []) : [];
+    setSync('ok');
+    render();
+  }, (err) => { console.warn('master onSnapshot error', err); setSync('off'); });
+}
+
+function attachDateListener(dateStr) {
+  if (!cloudEnabled) return;
+  if (unsubscribeDate) { unsubscribeDate(); unsubscribeDate = null; }
   const ref = doc(db, 'dailyPlanner', dateStr);
-  unsubscribe = onSnapshot(ref, (snap) => {
-    if (snap.metadata.hasPendingWrites) return; // これは自分の書き込みなので無視
+  unsubscribeDate = onSnapshot(ref, (snap) => {
+    if (snap.metadata.hasPendingWrites) return;
     if (snap.exists()) {
-      const data = snap.data();
-      state = { ...defaultState(dateStr), ...data, date: dateStr, page: state.page };
+      Object.assign(state, defaultDateState(dateStr), snap.data(), { date: dateStr });
     } else {
-      state = { ...defaultState(dateStr), page: state.page };
+      resetDateFields(dateStr);
     }
     setSync('ok');
     render();
-  }, (err) => {
-    console.warn('onSnapshot error', err);
-    setSync('off');
-  });
+  }, (err) => { console.warn('date onSnapshot error', err); setSync('off'); });
 }
 
-function scheduleSave() {
+function scheduleSaveDate() {
   if (!cloudEnabled) return;
   setSync('busy');
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  clearTimeout(saveTimerDate);
+  saveTimerDate = setTimeout(async () => {
     try {
-      const { page, ...persist } = state;
-      await setDoc(doc(db, 'dailyPlanner', state.date), persist, { merge: false });
+      const { date, meetingsText, workStart, workEnd, lunchStart, lunchEnd, scheduleTasks, generated } = state;
+      await setDoc(doc(db, 'dailyPlanner', state.date), { date, meetingsText, workStart, workEnd, lunchStart, lunchEnd, scheduleTasks, generated }, { merge: false });
       setSync('ok');
-    } catch (e) {
-      console.warn('save failed', e);
-      setSync('off');
-    }
+    } catch (e) { console.warn('save (date) failed', e); setSync('off'); }
+  }, 500);
+}
+
+function scheduleSaveMaster() {
+  if (!cloudEnabled) return;
+  setSync('busy');
+  clearTimeout(saveTimerMaster);
+  saveTimerMaster = setTimeout(async () => {
+    try {
+      await setDoc(doc(db, 'dailyPlannerTasks', 'main'), { tasks: state.masterTasks }, { merge: false });
+      setSync('ok');
+    } catch (e) { console.warn('save (master) failed', e); setSync('off'); }
   }, 500);
 }
 
@@ -449,16 +473,8 @@ function buildSchedule() {
   if (cursor < workEnd) segments.push({ start: cursor, end: workEnd });
   const totalFree = segments.reduce((s, seg) => s + (seg.end - seg.start), 0);
 
-  // pending tasks in placement order
-  const byId = Object.fromEntries(state.tasks.map(t => [t.id, t]));
-  let order = state.placementOrder.filter(id => byId[id] && !byId[id].done);
-  // include any tasks missing from placementOrder (newly added), sorted by priority
-  const missing = state.tasks
-    .filter(t => !t.done && !order.includes(t.id))
-    .sort((a,b) => (a.priority ?? 999) - (b.priority ?? 999))
-    .map(t => t.id);
-  order = [...order, ...missing];
-  const pending = order.map(id => byId[id]).filter(Boolean);
+  // その日にスケジューリングした時点のタスク(並び順=配置順)。完了済みは除外。
+  const pending = (state.scheduleTasks || []).filter(t => !t.done);
 
   const manualTotal = pending.reduce((s,t) => s + (t.manualDuration || 0), 0);
   const autoTasks = pending.filter(t => !t.manualDuration);
@@ -537,20 +553,26 @@ function topbarHTML() {
 }
 
 function inputPageHTML() {
-  const tasks = state.tasks;
+  const tasks = state.masterTasks;
+  const scheduleButtons = state.generated
+    ? `<div class="no-print" style="display:flex;gap:10px;margin-top:4px">
+         <button class="btn btn-primary" style="flex:1;justify-content:center" data-action="view-schedule">この日の予定を見る ${ICON.chevRight}</button>
+         <button class="btn btn-ghost" data-action="run-schedule">スケジューリングし直す</button>
+       </div>`
+    : `<button class="btn btn-primary btn-block" data-action="run-schedule">スケジューリングする ${ICON.chevRight}</button>`;
   return `
   <div class="page">
     <div class="day-nav no-print">
       <button class="navbtn" data-action="prev-day" aria-label="前の日">${ICON.chevLeft}</button>
       <div class="day-title">
-        <h1>${fmtDateLabel(state.date)} やることリスト</h1>
+        <h1>${fmtDateLabel(state.date)}</h1>
         <input type="date" value="${state.date}" data-action="set-date">
       </div>
       <button class="navbtn" data-action="next-day" aria-label="次の日">${ICON.chevRight}</button>
     </div>
 
     <div class="card">
-      <div class="card-head"><h2>やることリスト</h2><span class="hint">期限と優先度を入力</span></div>
+      <div class="card-head"><h2>やることリスト</h2><span class="hint">日をまたいで持ち越されます</span></div>
       <div class="task-table">
         <div class="task-head-row"><span>タスク</span><span>期限</span><span>優先度</span><span></span></div>
         ${tasks.length ? tasks.map(taskRowHTML).join('') : '<div class="empty-hint">まだタスクがありません。「追加」から始めましょう。</div>'}
@@ -586,7 +608,7 @@ function inputPageHTML() {
       </div>
     </div>
 
-    <button class="btn btn-primary btn-block" data-action="run-schedule">スケジューリングする ${ICON.chevRight}</button>
+    ${scheduleButtons}
   </div>`;
 }
 
@@ -613,16 +635,28 @@ function meetingsPreviewHTML() {
 }
 
 function schedulePageHTML() {
-  const sched = buildSchedule();
   const now = new Date();
   const isToday = state.date === fmtDate(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  if (!state.generated) {
+    return `
+    <div class="page">
+      <div class="sched-topline no-print">
+        <h1 class="sched-date">${fmtDateLabel(state.date)}</h1>
+        <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
+      </div>
+      <div class="sched-warn" style="background:var(--blue-soft);color:var(--blue)">この日はまだスケジューリングされていません。編集画面の「スケジューリングする」から作成してください。</div>
+    </div>`;
+  }
+
+  const sched = buildSchedule();
 
   if (!sched.valid) {
     return `
     <div class="page">
       <div class="sched-topline no-print">
-        <h1>${fmtDateLabel(state.date)}の予定</h1>
+        <h1 class="sched-date">${fmtDateLabel(state.date)}</h1>
         <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
       </div>
       <div class="sched-warn">業務時間の設定を確認してください(終了時刻は開始時刻より後にしてください)。</div>
@@ -656,8 +690,8 @@ function schedulePageHTML() {
   <div class="page">
     <div class="sched-topline no-print">
       <div>
-        <h1>スケジューリング</h1>
-        <div class="day-title sub">${fmtDateLabel(state.date)}の予定・会議${sched.meetingsCount}件</div>
+        <h1 class="sched-date">${fmtDateLabel(state.date)}</h1>
+        ${sched.meetingsCount ? `<div class="sched-sub">会議 ${sched.meetingsCount}件</div>` : ''}
       </div>
       <div class="sched-actions">
         <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
@@ -719,26 +753,29 @@ app.addEventListener('click', (e) => {
   const action = btn.dataset.action;
 
   if (action === 'add-task') {
-    const maxP = state.tasks.reduce((m,t) => Math.max(m, t.priority || 0), 0);
-    state.tasks.push({ id: uid(), name: '', deadline: '', priority: maxP + 1, done: false });
-    render(); scheduleSave();
+    const maxP = state.masterTasks.reduce((m,t) => Math.max(m, t.priority || 0), 0);
+    state.masterTasks.push({ id: uid(), name: '', deadline: '', priority: maxP + 1, done: false });
+    render(); scheduleSaveMaster();
   } else if (action === 'delete-task') {
     const row = e.target.closest('[data-task-id]');
     const id = row.dataset.taskId;
-    state.tasks = state.tasks.filter(t => t.id !== id);
-    state.placementOrder = state.placementOrder.filter(x => x !== id);
-    render(); scheduleSave();
+    state.masterTasks = state.masterTasks.filter(t => t.id !== id);
+    render(); scheduleSaveMaster();
   } else if (action === 'prev-day') {
     changeDate(-1);
   } else if (action === 'next-day') {
     changeDate(1);
   } else if (action === 'run-schedule') {
-    state.placementOrder = [...state.tasks]
+    const pending = [...state.masterTasks]
       .filter(t => !t.done)
-      .sort((a,b) => (a.priority ?? 999) - (b.priority ?? 999))
-      .map(t => t.id);
+      .sort((a,b) => (a.priority ?? 999) - (b.priority ?? 999));
+    state.scheduleTasks = pending.map(t => ({ id: t.id, name: t.name, priority: t.priority, manualDuration: null, done: false }));
+    state.generated = true;
     state.page = 'schedule';
-    render(); scheduleSave();
+    render(); scheduleSaveDate();
+  } else if (action === 'view-schedule') {
+    state.page = 'schedule';
+    render();
   } else if (action === 'go-input') {
     state.page = 'input';
     render();
@@ -747,9 +784,11 @@ app.addEventListener('click', (e) => {
   } else if (action === 'toggle-done') {
     const blockEl = e.target.closest('[data-task-id]');
     const taskId = blockEl.dataset.taskId;
-    const t = state.tasks.find(x => x.id === taskId);
-    if (t) t.done = !t.done;
-    render(); scheduleSave();
+    const entry = state.scheduleTasks.find(x => x.id === taskId);
+    if (entry) entry.done = !entry.done;
+    const master = state.masterTasks.find(x => x.id === taskId);
+    if (master) master.done = entry ? entry.done : !master.done;
+    render(); scheduleSaveDate(); scheduleSaveMaster();
   }
 });
 
@@ -757,30 +796,31 @@ app.addEventListener('input', (e) => {
   const t = e.target;
   if (t.matches('[data-task-field]')) {
     const row = t.closest('[data-task-id]');
-    const task = state.tasks.find(x => x.id === row.dataset.taskId);
+    const task = state.masterTasks.find(x => x.id === row.dataset.taskId);
     if (!task) return;
     const field = t.dataset.taskField;
     task[field] = field === 'priority' ? (parseInt(t.value, 10) || 1) : t.value;
-    scheduleSave();
+    scheduleSaveMaster();
   } else if (t.dataset.field === 'meetingsText') {
     state.meetingsText = t.value;
-    scheduleSave();
+    scheduleSaveDate();
     const wrapper = t.parentElement;
     const existing = wrapper.querySelector('.meetings-preview');
     if (existing) existing.remove();
     wrapper.insertAdjacentHTML('beforeend', meetingsPreviewHTML());
   } else if (t.dataset.timeField) {
     state[t.dataset.timeField] = t.value;
-    scheduleSave();
+    scheduleSaveDate();
   }
 });
 
 app.addEventListener('change', (e) => {
   if (e.target.dataset.action === 'set-date') {
     const newDate = e.target.value;
-    state = { ...defaultState(newDate), page: 'input' };
+    resetDateFields(newDate);
+    state.page = 'input';
     render();
-    if (cloudEnabled) attachListener(newDate);
+    if (cloudEnabled) attachDateListener(newDate);
   }
 });
 
@@ -788,9 +828,10 @@ function changeDate(delta) {
   const [y,m,d] = state.date.split('-').map(Number);
   const nd = new Date(y, m-1, d + delta);
   const newDate = fmtDate(nd);
-  state = { ...defaultState(newDate), page: 'input' };
+  resetDateFields(newDate);
+  state.page = 'input';
   render();
-  if (cloudEnabled) attachListener(newDate);
+  if (cloudEnabled) attachDateListener(newDate);
 }
 
 /* =========================================================
@@ -827,14 +868,13 @@ function startResize(blockEl, e) {
     document.removeEventListener('pointerup', onUp);
     blockEl.classList.remove('resizing');
     const dy = ev.clientY - startY;
-    const deltaMin = dy / PX_PER_MIN;
     const currentDur = (parseFloat(blockEl.style.height) / PX_PER_MIN);
-    const task = state.tasks.find(t => t.id === taskId);
+    const task = state.scheduleTasks.find(t => t.id === taskId);
     if (task) {
       const newDur = clamp5(currentDur);
       task.manualDuration = Math.max(5, newDur);
     }
-    render(); scheduleSave();
+    render(); scheduleSaveDate();
   }
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
@@ -869,9 +909,12 @@ function startReorder(blockEl, e) {
     const newOrderIds = others.map(o => o.id);
     newOrderIds.splice(insertIdx, 0, taskId);
 
-    // rebuild full placementOrder: keep same relative order for tasks not in this timeline pass (shouldn't happen) then apply new order
-    state.placementOrder = newOrderIds;
-    render(); scheduleSave();
+    // 完了済みタスクは並び替えの対象外(末尾にそのまま残す)。表示中(未完了)のタスクだけ新しい順番に並べ直す。
+    const doneEntries = state.scheduleTasks.filter(t => t.done);
+    const pendingMap = Object.fromEntries(state.scheduleTasks.filter(t => !t.done).map(t => [t.id, t]));
+    const reordered = newOrderIds.map(id => pendingMap[id]).filter(Boolean);
+    state.scheduleTasks = [...reordered, ...doneEntries];
+    render(); scheduleSaveDate();
   }
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
@@ -881,7 +924,8 @@ function startReorder(blockEl, e) {
    Boot
    ========================================================= */
 if (cloudEnabled) {
-  attachListener(state.date);
+  attachMasterListener();
+  attachDateListener(state.date);
 } else {
   setSync('off');
 }
