@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今日のスケジューリング</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Klee+One:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F2E9;
+    --paper-deep:#ECE6D4;
+    --rule:#D9D0B8;
+    --rule-red:#C67A6E;
+    --ink:#26231F;
+    --ink-soft:#8A8072;
+    --ink-faint:#B7AF9E;
+    --blue:#2E4C79;
+    --blue-soft:#DEE6F1;
+    --blue-line:#B9C8DE;
+    --amber:#B4802C;
+    --amber-soft:#F1E1BE;
+    --amber-line:#DFC38A;
+    --green:#4B6B4E;
+    --green-soft:#E1E9DD;
+    --red:#A3483A;
+    --red-soft:#F1DAD4;
+    --white:#FFFFFF;
+    --shadow:0 1px 2px rgba(38,35,31,.08),0 6px 16px rgba(38,35,31,.07);
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--paper-deep) 1px, transparent 1px);
+    background-size: 100% 32px;
+    color:var(--ink);
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  h1,h2,h3{ font-family:'Klee One', 'Zen Kaku Gothic New', sans-serif; margin:0; }
+  button{ font-family:inherit; cursor:pointer; }
+  input, textarea{ font-family:inherit; }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+
+  .container{ max-width:860px; margin:0 auto; padding:20px 16px 64px; }
+
+  .topbar{
+    display:flex; align-items:baseline; justify-content:space-between;
+    gap:12px; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand .mark{
+    width:34px; height:34px; border-radius:50%; background:var(--blue);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .brand .mark svg{ width:18px; height:18px; stroke:var(--white); }
+  .brand-title{ font-size:15px; color:var(--ink-soft); letter-spacing:.02em; }
+
+  .sync-status{ font-size:12px; color:var(--ink-faint); display:flex; align-items:center; gap:6px; }
+  .sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--ink-faint); flex-shrink:0; }
+  .sync-status.ok .sync-dot{ background:var(--green); }
+  .sync-status.busy .sync-dot{ background:var(--amber); animation:pulse 1s infinite; }
+  .sync-status.off .sync-dot{ background:var(--red); }
+  @keyframes pulse{ 50%{ opacity:.35; } }
+
+  .day-nav{
+    display:flex; align-items:center; gap:10px; margin-bottom:20px;
+  }
+  .day-nav .navbtn{
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--rule);
+    background:var(--white); display:flex; align-items:center; justify-content:center;
+    box-shadow:var(--shadow);
+  }
+  .day-nav .navbtn svg{ width:16px; height:16px; stroke:var(--ink); }
+  .day-title{ flex:1; }
+  .day-title h1{ font-size:26px; font-weight:600; line-height:1.15; }
+  .day-title .sub{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .day-title input[type=date]{
+    border:none; background:transparent; font:inherit; color:var(--ink);
+    font-size:13px; padding:0; margin-top:2px; cursor:pointer;
+  }
+
+  .card{
+    background:var(--white); border:1px solid var(--rule); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:18px 18px 20px; margin-bottom:18px;
+  }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .card-head h2{ font-size:16px; font-weight:600; }
+  .card-head .hint{ font-size:11.5px; color:var(--ink-faint); }
+
+  /* task table */
+  .task-table{ display:flex; flex-direction:column; gap:8px; }
+  .task-head-row{
+    display:grid; grid-template-columns: 1fr 128px 78px 30px;
+    gap:8px; padding:0 4px; font-size:11.5px; color:var(--ink-faint);
+  }
+  .task-row{
+    display:grid; grid-template-columns: 1fr 128px 78px 30px;
+    gap:8px; align-items:center; background:var(--paper); border:1px solid var(--rule);
+    border-radius:8px; padding:7px 8px;
+  }
+  .task-row.done{ opacity:.55; }
+  .task-row input[type=text]{
+    border:none; background:transparent; font-size:14px; color:var(--ink); width:100%; padding:4px 2px;
+  }
+  .task-row input[type=date]{
+    border:none; background:transparent; font-size:12.5px; color:var(--ink-soft); width:100%;
+  }
+  .task-row input[type=number]{
+    border:none; background:transparent; font-size:13px; color:var(--ink); width:100%; text-align:center;
+  }
+  .task-row input:focus{ outline:2px solid var(--blue-line); outline-offset:1px; border-radius:4px; }
+  .icon-btn{
+    border:none; background:transparent; width:28px; height:28px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center; color:var(--ink-faint);
+  }
+  .icon-btn:hover{ background:var(--red-soft); color:var(--red); }
+  .icon-btn svg{ width:15px; height:15px; stroke:currentColor; }
+  .add-row-btn{
+    margin-top:4px; align-self:flex-start; display:flex; align-items:center; gap:6px;
+    background:none; border:1px dashed var(--rule); color:var(--blue); font-size:13px;
+    padding:7px 14px; border-radius:8px;
+  }
+  .add-row-btn:hover{ background:var(--blue-soft); }
+  .add-row-btn svg{ width:14px; height:14px; stroke:currentColor; }
+  .empty-hint{ font-size:13px; color:var(--ink-faint); padding:6px 4px; }
+
+  textarea.meetings-input{
+    width:100%; min-height:88px; border:1px solid var(--rule); border-radius:8px;
+    background:var(--paper); padding:10px 12px; font-size:13.5px; color:var(--ink);
+    resize:vertical; line-height:1.6;
+  }
+  textarea.meetings-input:focus{ outline:2px solid var(--blue-line); outline-offset:1px; }
+  .meetings-preview{ margin-top:10px; font-size:12px; color:var(--ink-soft); }
+  .meetings-preview b{ color:var(--blue); font-weight:700; }
+
+  .time-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .time-field label{ font-size:12px; color:var(--ink-soft); display:block; margin-bottom:5px; }
+  .time-pair{ display:flex; align-items:center; gap:8px; }
+  .time-pair input[type=time]{
+    flex:1; border:1px solid var(--rule); border-radius:8px; padding:8px 9px;
+    background:var(--paper); font-size:14px; color:var(--ink);
+  }
+  .time-pair span{ color:var(--ink-faint); font-size:13px; }
+
+  .btn{
+    border:none; border-radius:9px; padding:11px 20px; font-size:14.5px; font-weight:700;
+    display:inline-flex; align-items:center; gap:8px; box-shadow:var(--shadow);
+  }
+  .btn-primary{ background:var(--blue); color:var(--white); }
+  .btn-primary:hover{ background:#25406A; }
+  .btn-ghost{ background:var(--white); color:var(--ink); border:1px solid var(--rule); box-shadow:none; }
+  .btn-ghost:hover{ background:var(--paper-deep); }
+  .btn svg{ width:15px; height:15px; stroke:currentColor; }
+  .btn-block{ width:100%; justify-content:center; font-size:15.5px; padding:14px; margin-top:4px; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+
+  .page{ animation:fade .25s ease; }
+  @keyframes fade{ from{ opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+  @media (prefers-reduced-motion: reduce){ .page{ animation:none; } }
+
+  /* schedule page */
+  .sched-topline{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
+  .sched-actions{ display:flex; gap:8px; }
+  .sched-warn{
+    font-size:12px; color:var(--red); background:var(--red-soft); border-radius:7px;
+    padding:8px 12px; margin-bottom:12px;
+  }
+  .sched-hint{ font-size:11.5px; color:var(--ink-faint); margin-bottom:14px; }
+
+  .timeline-wrap{
+    background:var(--white); border:1px solid var(--rule); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:18px 14px 24px 0; overflow:hidden;
+  }
+  .timeline{ position:relative; margin-left:64px; border-left:2px solid var(--rule-red); }
+  .hour-mark{
+    position:absolute; left:0; width:100%; border-top:1px solid var(--rule);
+  }
+  .hour-mark.half{ border-top:1px dashed var(--rule); }
+  .hour-label{
+    position:absolute; left:-58px; top:-8px; width:48px; text-align:right;
+    font-size:12px; color:var(--ink-soft); font-weight:500;
+  }
+  .now-line{
+    position:absolute; left:-2px; width:calc(100% + 2px); border-top:2px solid var(--red); z-index:5;
+  }
+  .now-line::before{
+    content:''; position:absolute; left:-4px; top:-4px; width:8px; height:8px;
+    border-radius:50%; background:var(--red);
+  }
+
+  .block{
+    position:absolute; left:10px; right:10px; border-radius:8px; overflow:hidden;
+    box-shadow:0 1px 3px rgba(38,35,31,.12);
+  }
+  .block-inner{ padding:6px 10px; height:100%; display:flex; flex-direction:column; gap:2px; }
+  .block-fixed{ background:var(--amber-soft); border:1px solid var(--amber-line); }
+  .block-fixed.lunch{ background:var(--green-soft); border:1px solid #BFD2BE; }
+  .block-task{ background:var(--blue-soft); border:1px solid var(--blue-line); }
+  .block-task.done{ background:var(--paper-deep); border:1px solid var(--rule); }
+  .block-title{ font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.25; }
+  .block-fixed .block-title{ color:#7A5A1E; }
+  .block-fixed.lunch .block-title{ color:#3E5A40; }
+  .block-time{ font-size:10.5px; color:var(--ink-soft); }
+  .block-tag{
+    position:absolute; top:5px; right:6px; font-size:9.5px; padding:1px 6px; border-radius:20px;
+    background:var(--white); color:var(--blue); font-weight:700; border:1px solid var(--blue-line);
+  }
+  .block-task .grip{
+    position:absolute; top:4px; left:4px; width:16px; height:16px; cursor:grab;
+    color:var(--ink-faint); display:flex; align-items:center; justify-content:center;
+  }
+  .block-task .grip svg{ width:12px; height:12px; }
+  .block-task .done-toggle{
+    position:absolute; top:4px; right:4px; width:16px; height:16px; border-radius:4px;
+    border:1.5px solid var(--blue-line); background:var(--white); display:flex; align-items:center; justify-content:center;
+  }
+  .block-task.done .done-toggle{ background:var(--green); border-color:var(--green); }
+  .block-task .done-toggle svg{ width:11px; height:11px; stroke:var(--white); opacity:0; }
+  .block-task.done .done-toggle svg{ opacity:1; }
+  .resize-handle{
+    position:absolute; left:0; right:0; bottom:0; height:9px; cursor:ns-resize;
+    display:flex; align-items:flex-end; justify-content:center; padding-bottom:1px;
+  }
+  .resize-handle::after{ content:''; width:22px; height:3px; border-radius:2px; background:var(--blue-line); }
+  .block.dragging{ opacity:.55; z-index:20; }
+  .block.resizing{ z-index:20; }
+
+  .overflow-box{
+    margin-top:14px; padding:12px 14px; background:var(--red-soft); border-radius:8px; font-size:13px; color:var(--red);
+  }
+  .overflow-box b{ display:block; margin-bottom:4px; font-size:12.5px; }
+
+  [data-label]{ position:relative; }
+  @media (max-width:560px){
+    .time-grid{ grid-template-columns:1fr; }
+    .task-head-row{ display:none; }
+    .task-row{
+      grid-template-columns:1fr 30px; grid-template-rows:auto auto; row-gap:6px;
+    }
+    .task-row .f-name{ grid-column:1/2; grid-row:1; }
+    .task-row .f-del{ grid-column:2/3; grid-row:1; }
+    .task-row .f-deadline, .task-row .f-priority{ grid-column:1/2; grid-row:2; display:flex; align-items:center; gap:6px; }
+    .task-row .f-priority{ grid-row:3; }
+    .task-row [data-label]::before{
+      content:attr(data-label); font-size:10.5px; color:var(--ink-faint); white-space:nowrap;
+    }
+    .day-title h1{ font-size:22px; }
+  }
+
+  .no-print{}
+  @media print{
+    body{ background:var(--white); }
+    .no-print{ display:none !important; }
+    .container{ max-width:100%; padding:0; }
+    .timeline-wrap{ box-shadow:none; border:none; }
+    .card{ box-shadow:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app" class="container"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+/* =========================================================
+   Firebase setup
+   kids-schedule-app と同じ Firebase プロジェクトを使う場合は、
+   そのプロジェクトの firebaseConfig をそのままここに貼り付けてください。
+   別プロジェクトにしたい場合は、Firebase コンソールで新規プロジェクト
+   → Firestore Database を有効化 → ウェブアプリを追加、して
+   表示される config をここに貼り付けてください。
+   コレクション名は "dailyPlanner" を使うので、kids-schedule-app の
+   データ (別コレクション) とは衝突しません。
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+};
+
+let db = null;
+let cloudEnabled = false;
+try {
+  const fbApp = initializeApp(firebaseConfig);
+  db = getFirestore(fbApp);
+  cloudEnabled = firebaseConfig.apiKey !== "YOUR_API_KEY";
+} catch (e) {
+  console.warn("Firebase init failed, running in local-only mode.", e);
+  cloudEnabled = false;
+}
+
+/* =========================================================
+   Utilities
+   ========================================================= */
+const PX_PER_MIN = 1.5;
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now());
+const pad2 = n => String(n).padStart(2, '0');
+const toMin = (hhmm) => { if(!hhmm) return null; const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
+const toHHMM = (min) => { min = Math.max(0, Math.round(min)); return pad2(Math.floor(min/60)%24) + ':' + pad2(min%60); };
+const fmtDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const fmtDateLabel = (dateStr) => {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const wd = ['日','月','火','水','木','金','土'][new Date(y,m-1,d).getDay()];
+  return `${m}月${d}日(${wd})`;
+};
+const clamp5 = (min) => Math.max(5, Math.round(min/5)*5);
+
+const TIME_RANGE_RE = /(\d{1,2})(?:[:：時](\d{1,2})?分?)?\s*[-〜~～ー]\s*(\d{1,2})(?:[:：時](\d{1,2})?分?)?/;
+
+function parseMeetingsText(text) {
+  const lines = (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const meetings = [];
+  const unrecognized = [];
+  for (const line of lines) {
+    const m = line.match(TIME_RANGE_RE);
+    if (!m) { unrecognized.push(line); continue; }
+    const sH = +m[1], sM = +(m[2] || 0), eH = +m[3], eM = +(m[4] || 0);
+    const start = sH*60+sM, end = eH*60+eM;
+    if (end <= start) { unrecognized.push(line); continue; }
+    let title = (line.slice(0, m.index) + line.slice(m.index + m[0].length)).trim();
+    title = title.replace(/^[\s,、:：\-ー]+|[\s,、:：\-ー]+$/g, '');
+    if (!title) title = '会議';
+    meetings.push({ id: 'mtg-' + start, start, end, title });
+  }
+  meetings.sort((a,b) => a.start - b.start);
+  return { meetings, unrecognized };
+}
+
+function defaultState(dateStr) {
+  return {
+    date: dateStr,
+    tasks: [],
+    placementOrder: [],
+    meetingsText: '',
+    workStart: '09:00',
+    workEnd: '18:00',
+    lunchStart: '12:00',
+    lunchEnd: '13:00',
+    page: 'input',
+  };
+}
+
+let state = defaultState(fmtDate(new Date()));
+let unsubscribe = null;
+let saveTimer = null;
+let syncState = cloudEnabled ? 'ok' : 'off';
+
+/* =========================================================
+   Firestore sync
+   ========================================================= */
+function attachListener(dateStr) {
+  if (!cloudEnabled) return;
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  const ref = doc(db, 'dailyPlanner', dateStr);
+  unsubscribe = onSnapshot(ref, (snap) => {
+    if (snap.metadata.hasPendingWrites) return; // これは自分の書き込みなので無視
+    if (snap.exists()) {
+      const data = snap.data();
+      state = { ...defaultState(dateStr), ...data, date: dateStr, page: state.page };
+    } else {
+      state = { ...defaultState(dateStr), page: state.page };
+    }
+    setSync('ok');
+    render();
+  }, (err) => {
+    console.warn('onSnapshot error', err);
+    setSync('off');
+  });
+}
+
+function scheduleSave() {
+  if (!cloudEnabled) return;
+  setSync('busy');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      const { page, ...persist } = state;
+      await setDoc(doc(db, 'dailyPlanner', state.date), persist, { merge: false });
+      setSync('ok');
+    } catch (e) {
+      console.warn('save failed', e);
+      setSync('off');
+    }
+  }, 500);
+}
+
+function setSync(s) { syncState = s; const el = document.getElementById('syncStatus'); if (el) paintSyncStatus(el); }
+function paintSyncStatus(el) {
+  el.className = 'sync-status ' + syncState;
+  el.querySelector('span').textContent =
+    syncState === 'ok' ? (cloudEnabled ? '同期済み' : 'ローカルのみ') :
+    syncState === 'busy' ? '保存中…' : '未接続';
+}
+
+/* =========================================================
+   Scheduling engine
+   ========================================================= */
+function buildSchedule() {
+  const workStart = toMin(state.workStart);
+  const workEnd = toMin(state.workEnd);
+  const result = { blocks: [], overflow: [], unrecognized: [], meetingsCount: 0, valid: true };
+  if (workStart == null || workEnd == null || workEnd <= workStart) {
+    result.valid = false;
+    return result;
+  }
+
+  const { meetings, unrecognized } = parseMeetingsText(state.meetingsText);
+  result.unrecognized = unrecognized;
+  result.meetingsCount = meetings.length;
+
+  const fixed = meetings.map(m => ({ ...m, type: 'meeting' }));
+  const lunchStart = toMin(state.lunchStart), lunchEnd = toMin(state.lunchEnd);
+  if (lunchStart != null && lunchEnd != null && lunchEnd > lunchStart) {
+    fixed.push({ id: 'lunch', start: lunchStart, end: lunchEnd, title: 'ランチタイム', type: 'lunch' });
+  }
+  // clamp to work hours & drop invalid
+  const clamped = fixed
+    .map(f => ({ ...f, start: Math.max(f.start, workStart), end: Math.min(f.end, workEnd) }))
+    .filter(f => f.end > f.start)
+    .sort((a,b) => a.start - b.start);
+  // merge overlaps by simply keeping chronological order (start-clip if overlapping previous)
+  const fixedBlocks = [];
+  let lastEnd = workStart;
+  for (const f of clamped) {
+    const start = Math.max(f.start, lastEnd);
+    if (start >= f.end) continue;
+    fixedBlocks.push({ ...f, start, end: f.end });
+    lastEnd = f.end;
+  }
+
+  // free segments
+  const segments = [];
+  let cursor = workStart;
+  for (const f of fixedBlocks) {
+    if (f.start > cursor) segments.push({ start: cursor, end: f.start });
+    cursor = Math.max(cursor, f.end);
+  }
+  if (cursor < workEnd) segments.push({ start: cursor, end: workEnd });
+  const totalFree = segments.reduce((s, seg) => s + (seg.end - seg.start), 0);
+
+  // pending tasks in placement order
+  const byId = Object.fromEntries(state.tasks.map(t => [t.id, t]));
+  let order = state.placementOrder.filter(id => byId[id] && !byId[id].done);
+  // include any tasks missing from placementOrder (newly added), sorted by priority
+  const missing = state.tasks
+    .filter(t => !t.done && !order.includes(t.id))
+    .sort((a,b) => (a.priority ?? 999) - (b.priority ?? 999))
+    .map(t => t.id);
+  order = [...order, ...missing];
+  const pending = order.map(id => byId[id]).filter(Boolean);
+
+  const manualTotal = pending.reduce((s,t) => s + (t.manualDuration || 0), 0);
+  const autoTasks = pending.filter(t => !t.manualDuration);
+  const remainingForAuto = totalFree - manualTotal;
+  const autoDuration = autoTasks.length > 0 ? Math.max(0, clamp5(remainingForAuto / autoTasks.length)) : 0;
+
+  const segs = segments.map(s => ({ ...s }));
+  let segIdx = 0;
+  let segCursor = segs.length ? segs[0].start : null;
+  const taskBlocks = [];
+
+  for (const t of pending) {
+    let remaining = t.manualDuration || autoDuration;
+    if (remaining <= 0) { result.overflow.push(t); continue; }
+    let placedAny = false;
+    while (remaining > 0 && segIdx < segs.length) {
+      if (segCursor >= segs[segIdx].end) { segIdx++; segCursor = segs[segIdx] ? segs[segIdx].start : null; continue; }
+      const availableInSeg = segs[segIdx].end - segCursor;
+      const take = Math.min(availableInSeg, remaining);
+      taskBlocks.push({ id: 'blk-' + t.id + '-' + segIdx, type: 'task', taskId: t.id, title: t.name || '(無題タスク)', start: segCursor, end: segCursor + take, done: !!t.done });
+      segCursor += take;
+      remaining -= take;
+      placedAny = true;
+      if (segCursor >= segs[segIdx].end) { segIdx++; segCursor = segs[segIdx] ? segs[segIdx].start : null; }
+    }
+    if (remaining > 0) result.overflow.push(t);
+    else if (!placedAny) result.overflow.push(t);
+  }
+
+  const allBlocks = [
+    ...fixedBlocks.map(f => ({ id: f.id, type: f.type, title: f.title, start: f.start, end: f.end, fixed: true })),
+    ...taskBlocks,
+  ].sort((a,b) => a.start - b.start);
+
+  result.blocks = allBlocks;
+  result.workStart = workStart;
+  result.workEnd = workEnd;
+  return result;
+}
+
+/* =========================================================
+   Icons
+   ========================================================= */
+const ICON = {
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+  printer: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4v-6h16v6h-2M6 14h12v7H6z"/></svg>',
+  chevLeft: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  chevRight: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
+  grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  arrowLeft: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+};
+
+/* =========================================================
+   Rendering
+   ========================================================= */
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = topbarHTML() + (state.page === 'input' ? inputPageHTML() : schedulePageHTML());
+  const syncEl = document.getElementById('syncStatus');
+  if (syncEl) paintSyncStatus(syncEl);
+  if (state.page === 'schedule') positionBlocks();
+}
+
+function topbarHTML() {
+  return `
+  <div class="topbar no-print">
+    <div class="brand">
+      <div class="mark">${ICON.calendar}</div>
+      <div class="brand-title">今日のスケジューリング</div>
+    </div>
+    <div class="sync-status ${syncState}" id="syncStatus"><span class="sync-dot"></span><span>—</span></div>
+  </div>`;
+}
+
+function inputPageHTML() {
+  const tasks = state.tasks;
+  return `
+  <div class="page">
+    <div class="day-nav no-print">
+      <button class="navbtn" data-action="prev-day" aria-label="前の日">${ICON.chevLeft}</button>
+      <div class="day-title">
+        <h1>${fmtDateLabel(state.date)} やることリスト</h1>
+        <input type="date" value="${state.date}" data-action="set-date">
+      </div>
+      <button class="navbtn" data-action="next-day" aria-label="次の日">${ICON.chevRight}</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>やることリスト</h2><span class="hint">期限と優先度を入力</span></div>
+      <div class="task-table">
+        <div class="task-head-row"><span>タスク</span><span>期限</span><span>優先度</span><span></span></div>
+        ${tasks.length ? tasks.map(taskRowHTML).join('') : '<div class="empty-hint">まだタスクがありません。「追加」から始めましょう。</div>'}
+      </div>
+      <button class="add-row-btn" data-action="add-task">${ICON.plus}追加</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>今日の会議</h2><span class="hint">1行に1件、時刻付きで入力</span></div>
+      <textarea class="meetings-input" placeholder="例）&#10;10:00-10:30 朝会&#10;14:00〜15:00 A社商談" data-field="meetingsText">${escapeHTML(state.meetingsText)}</textarea>
+      ${meetingsPreviewHTML()}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>今日の業務時間</h2></div>
+      <div class="time-grid">
+        <div class="time-field">
+          <label>業務時間</label>
+          <div class="time-pair">
+            <input type="time" value="${state.workStart}" data-time-field="workStart">
+            <span>〜</span>
+            <input type="time" value="${state.workEnd}" data-time-field="workEnd">
+          </div>
+        </div>
+        <div class="time-field">
+          <label>ランチタイム</label>
+          <div class="time-pair">
+            <input type="time" value="${state.lunchStart}" data-time-field="lunchStart">
+            <span>〜</span>
+            <input type="time" value="${state.lunchEnd}" data-time-field="lunchEnd">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-block" data-action="run-schedule">スケジューリングする ${ICON.chevRight}</button>
+  </div>`;
+}
+
+function taskRowHTML(t) {
+  return `
+  <div class="task-row ${t.done ? 'done' : ''}" data-task-id="${t.id}">
+    <div class="f-name" data-label="タスク"><input type="text" placeholder="タスク名" value="${escapeAttr(t.name)}" data-task-field="name"></div>
+    <div class="f-deadline" data-label="期限"><input type="date" value="${t.deadline || ''}" data-task-field="deadline"></div>
+    <div class="f-priority" data-label="優先度"><input type="number" min="1" value="${t.priority ?? 1}" data-task-field="priority"></div>
+    <div class="f-del"><button class="icon-btn" data-action="delete-task" aria-label="削除">${ICON.trash}</button></div>
+  </div>`;
+}
+
+function meetingsPreviewHTML() {
+  const { meetings, unrecognized } = parseMeetingsText(state.meetingsText);
+  if (!state.meetingsText.trim()) return '';
+  let html = `<div class="meetings-preview">`;
+  html += `<b>${meetings.length}件</b> の会議を認識しました`;
+  if (unrecognized.length) {
+    html += `<br>認識できなかった行: ${unrecognized.map(escapeHTML).join(' / ')}`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function schedulePageHTML() {
+  const sched = buildSchedule();
+  const now = new Date();
+  const isToday = state.date === fmtDate(now);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  if (!sched.valid) {
+    return `
+    <div class="page">
+      <div class="sched-topline no-print">
+        <h1>${fmtDateLabel(state.date)}の予定</h1>
+        <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
+      </div>
+      <div class="sched-warn">業務時間の設定を確認してください(終了時刻は開始時刻より後にしてください)。</div>
+    </div>`;
+  }
+
+  const totalMin = sched.workEnd - sched.workStart;
+  const heightPx = totalMin * PX_PER_MIN;
+
+  let marks = '';
+  for (let m = sched.workStart; m <= sched.workEnd; m += 30) {
+    const top = (m - sched.workStart) * PX_PER_MIN;
+    const isHour = m % 60 === 0;
+    marks += `<div class="hour-mark ${isHour ? '' : 'half'}" style="top:${top}px">${isHour ? `<span class="hour-label mono">${toHHMM(m)}</span>` : ''}</div>`;
+  }
+
+  let nowLine = '';
+  if (isToday && nowMin >= sched.workStart && nowMin <= sched.workEnd) {
+    nowLine = `<div class="now-line" style="top:${(nowMin - sched.workStart) * PX_PER_MIN}px"></div>`;
+  }
+
+  const blocksHTML = sched.blocks.map(b => blockHTML(b, sched.workStart)).join('');
+
+  const overflowHTML = sched.overflow.length ? `
+    <div class="overflow-box no-print">
+      <b>時間内に収まらなかったタスク</b>
+      ${sched.overflow.map(t => escapeHTML(t.name || '(無題タスク)')).join(' / ')}
+    </div>` : '';
+
+  return `
+  <div class="page">
+    <div class="sched-topline no-print">
+      <div>
+        <h1>スケジューリング</h1>
+        <div class="day-title sub">${fmtDateLabel(state.date)}の予定・会議${sched.meetingsCount}件</div>
+      </div>
+      <div class="sched-actions">
+        <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
+        <button class="btn btn-ghost" data-action="print">${ICON.printer}印刷</button>
+      </div>
+    </div>
+    <div class="sched-hint no-print">タスクのブロックは、左上の<svg style="width:11px;height:11px;vertical-align:-1px" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>をドラッグすると順番を、下端をドラッグすると長さを調整できます。</div>
+    <div class="timeline-wrap">
+      <div class="timeline" id="timeline" style="height:${heightPx}px">
+        ${marks}
+        ${nowLine}
+        ${blocksHTML}
+      </div>
+    </div>
+    ${overflowHTML}
+  </div>`;
+}
+
+function blockHTML(b, workStart) {
+  const top = (b.start - workStart) * PX_PER_MIN;
+  const height = Math.max(20, (b.end - b.start) * PX_PER_MIN);
+  const timeLabel = `${toHHMM(b.start)}–${toHHMM(b.end)}`;
+  if (b.fixed) {
+    const cls = b.type === 'lunch' ? 'block-fixed lunch' : 'block-fixed';
+    return `
+    <div class="block ${cls}" style="top:${top}px;height:${height}px" data-block-id="${b.id}">
+      <div class="block-inner">
+        <div class="block-title">${escapeHTML(b.title)}</div>
+        <div class="block-time mono">${timeLabel}</div>
+      </div>
+      <span class="block-tag">${b.type === 'lunch' ? 'ランチ' : '固定'}</span>
+    </div>`;
+  }
+  return `
+  <div class="block block-task ${b.done ? 'done' : ''}" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-task-id="${b.taskId}">
+    <span class="grip no-print" data-drag-handle>${ICON.grip}</span>
+    <button class="done-toggle no-print" data-action="toggle-done" aria-label="完了">${ICON.check}</button>
+    <div class="block-inner" style="padding-top:22px">
+      <div class="block-title">${escapeHTML(b.title)}</div>
+      <div class="block-time mono">${timeLabel}</div>
+    </div>
+    <div class="resize-handle no-print" data-resize-handle></div>
+  </div>`;
+}
+
+function positionBlocks() { /* layout done via inline styles already */ }
+
+function escapeHTML(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s) { return escapeHTML(s); }
+
+/* =========================================================
+   Event delegation
+   ========================================================= */
+const app = document.getElementById('app');
+
+app.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+
+  if (action === 'add-task') {
+    const maxP = state.tasks.reduce((m,t) => Math.max(m, t.priority || 0), 0);
+    state.tasks.push({ id: uid(), name: '', deadline: '', priority: maxP + 1, done: false });
+    render(); scheduleSave();
+  } else if (action === 'delete-task') {
+    const row = e.target.closest('[data-task-id]');
+    const id = row.dataset.taskId;
+    state.tasks = state.tasks.filter(t => t.id !== id);
+    state.placementOrder = state.placementOrder.filter(x => x !== id);
+    render(); scheduleSave();
+  } else if (action === 'prev-day') {
+    changeDate(-1);
+  } else if (action === 'next-day') {
+    changeDate(1);
+  } else if (action === 'run-schedule') {
+    state.placementOrder = [...state.tasks]
+      .filter(t => !t.done)
+      .sort((a,b) => (a.priority ?? 999) - (b.priority ?? 999))
+      .map(t => t.id);
+    state.page = 'schedule';
+    render(); scheduleSave();
+  } else if (action === 'go-input') {
+    state.page = 'input';
+    render();
+  } else if (action === 'print') {
+    window.print();
+  } else if (action === 'toggle-done') {
+    const blockEl = e.target.closest('[data-task-id]');
+    const taskId = blockEl.dataset.taskId;
+    const t = state.tasks.find(x => x.id === taskId);
+    if (t) t.done = !t.done;
+    render(); scheduleSave();
+  }
+});
+
+app.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.matches('[data-task-field]')) {
+    const row = t.closest('[data-task-id]');
+    const task = state.tasks.find(x => x.id === row.dataset.taskId);
+    if (!task) return;
+    const field = t.dataset.taskField;
+    task[field] = field === 'priority' ? (parseInt(t.value, 10) || 1) : t.value;
+    scheduleSave();
+  } else if (t.dataset.field === 'meetingsText') {
+    state.meetingsText = t.value;
+    scheduleSave();
+    const wrapper = t.parentElement;
+    const existing = wrapper.querySelector('.meetings-preview');
+    if (existing) existing.remove();
+    wrapper.insertAdjacentHTML('beforeend', meetingsPreviewHTML());
+  } else if (t.dataset.timeField) {
+    state[t.dataset.timeField] = t.value;
+    scheduleSave();
+  }
+});
+
+app.addEventListener('change', (e) => {
+  if (e.target.dataset.action === 'set-date') {
+    const newDate = e.target.value;
+    state = { ...defaultState(newDate), page: 'input' };
+    render();
+    if (cloudEnabled) attachListener(newDate);
+  }
+});
+
+function changeDate(delta) {
+  const [y,m,d] = state.date.split('-').map(Number);
+  const nd = new Date(y, m-1, d + delta);
+  const newDate = fmtDate(nd);
+  state = { ...defaultState(newDate), page: 'input' };
+  render();
+  if (cloudEnabled) attachListener(newDate);
+}
+
+/* =========================================================
+   Drag to reorder / resize (pointer events, touch-friendly)
+   ========================================================= */
+let dragCtx = null;
+
+app.addEventListener('pointerdown', (e) => {
+  const resizeHandle = e.target.closest('[data-resize-handle]');
+  const dragHandle = e.target.closest('[data-drag-handle]');
+  if (resizeHandle) {
+    const blockEl = resizeHandle.closest('.block-task');
+    startResize(blockEl, e);
+  } else if (dragHandle) {
+    const blockEl = dragHandle.closest('.block-task');
+    startReorder(blockEl, e);
+  }
+});
+
+function startResize(blockEl, e) {
+  e.preventDefault();
+  const taskId = blockEl.dataset.taskId;
+  const startY = e.clientY;
+  const startHeight = blockEl.getBoundingClientRect().height;
+  blockEl.classList.add('resizing');
+
+  function onMove(ev) {
+    const dy = ev.clientY - startY;
+    const newHeight = Math.max(20, startHeight + dy);
+    blockEl.style.height = newHeight + 'px';
+  }
+  function onUp(ev) {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    blockEl.classList.remove('resizing');
+    const dy = ev.clientY - startY;
+    const deltaMin = dy / PX_PER_MIN;
+    const currentDur = (parseFloat(blockEl.style.height) / PX_PER_MIN);
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) {
+      const newDur = clamp5(currentDur);
+      task.manualDuration = Math.max(5, newDur);
+    }
+    render(); scheduleSave();
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
+
+function startReorder(blockEl, e) {
+  e.preventDefault();
+  const taskId = blockEl.dataset.taskId;
+  const timeline = document.getElementById('timeline');
+  const taskBlocks = Array.from(timeline.querySelectorAll('.block-task'));
+  const startY = e.clientY;
+  const startTop = parseFloat(blockEl.style.top);
+  blockEl.classList.add('dragging');
+  blockEl.style.zIndex = 20;
+
+  function onMove(ev) {
+    const dy = ev.clientY - startY;
+    blockEl.style.top = (startTop + dy) + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    blockEl.classList.remove('dragging');
+
+    // determine new order based on resulting vertical center position among task blocks
+    const newTop = parseFloat(blockEl.style.top);
+    const others = taskBlocks.filter(el => el !== blockEl)
+      .map(el => ({ id: el.dataset.taskId, top: parseFloat(el.style.top) }));
+    others.sort((a,b) => a.top - b.top);
+    let insertIdx = others.findIndex(o => newTop < o.top);
+    if (insertIdx === -1) insertIdx = others.length;
+    const newOrderIds = others.map(o => o.id);
+    newOrderIds.splice(insertIdx, 0, taskId);
+
+    // rebuild full placementOrder: keep same relative order for tasks not in this timeline pass (shouldn't happen) then apply new order
+    state.placementOrder = newOrderIds;
+    render(); scheduleSave();
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
+
+/* =========================================================
+   Boot
+   ========================================================= */
+if (cloudEnabled) {
+  attachListener(state.date);
+} else {
+  setSync('off');
+}
+render();
+</script>
+</body>
+</html>
