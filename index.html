@@ -303,6 +303,7 @@
   }
 
   .no-print{}
+  @page{ size:auto; margin:10mm; }
   @media print{
     * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
     body{ background:var(--white); }
@@ -1057,6 +1058,20 @@ function startReorder(blockEl, e) {
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
 }
+
+/* =========================================================
+   印刷対応(iPhone Safari/Chrome 対策)
+   iOSでは印刷時に、その時のスマホ画面の横幅を基準にページを拡大してしまい、
+   PCでは1枚に収まる内容でもiPhoneでは大きくはみ出すことがある。
+   印刷の直前だけ横幅の基準をPCと同じ広さに切り替えることで、印刷結果を揃える。
+   ========================================================= */
+const viewportMeta = document.querySelector('meta[name="viewport"]');
+window.addEventListener('beforeprint', () => {
+  if (viewportMeta) viewportMeta.setAttribute('content', 'width=1024');
+});
+window.addEventListener('afterprint', () => {
+  if (viewportMeta) viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0');
+});
 
 /* =========================================================
    Boot
