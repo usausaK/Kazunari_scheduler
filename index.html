@@ -775,7 +775,8 @@ function schedulePageHTML() {
 function blockHTML(b, workStart) {
   const top = (b.start - workStart) * PX_PER_MIN;
   const height = Math.max(20, (b.end - b.start) * PX_PER_MIN);
-  const timeLabel = `${toHHMM(b.start)}–${toHHMM(b.end)}`;
+  const durationMin = Math.round(b.end - b.start);
+  const timeLabel = `${toHHMM(b.start)}–${toHHMM(b.end)}（${durationMin}分）`;
   if (b.type === 'lunch') {
     return `
     <div class="block block-fixed lunch" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-lunch-block>
