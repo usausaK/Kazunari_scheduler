@@ -213,11 +213,11 @@
     position:absolute; top:5px; right:6px; font-size:9.5px; padding:1px 6px; border-radius:20px;
     background:var(--white); color:var(--blue); font-weight:700; border:1px solid var(--blue-line);
   }
-  .block-task .grip{
+  .block-task .grip, .block-fixed.lunch .grip{
     position:absolute; top:4px; left:4px; width:16px; height:16px; cursor:grab;
     color:var(--ink-faint); display:flex; align-items:center; justify-content:center;
   }
-  .block-task .grip svg{ width:12px; height:12px; }
+  .block-task .grip svg, .block-fixed.lunch .grip svg{ width:12px; height:12px; }
   .block-task .done-toggle{
     position:absolute; top:4px; right:4px; width:16px; height:16px; border-radius:4px;
     border:1.5px solid var(--blue-line); background:var(--white); display:flex; align-items:center; justify-content:center;
@@ -288,7 +288,7 @@ const firebaseConfig = {
   projectId: "kazunari-scheduler",
   storageBucket: "kazunari-scheduler.firebasestorage.app",
   messagingSenderId: "427034348968",
-  appId: "1:427034348968:web:c4b11986b139f7c326619d"
+  appId: "1:427034348968:web:c4b11986b139f7c326619d",
 };
 
 let db = null;
@@ -317,6 +317,7 @@ const fmtDateLabel = (dateStr) => {
   return `${m}月${d}日(${wd})`;
 };
 const clamp5 = (min) => Math.max(5, Math.round(min/5)*5);
+const round5 = (min) => Math.round(min/5)*5;
 
 const TIME_RANGE_RE = /(\d{1,2})(?:[:：時](\d{1,2})?分?)?\s*[-〜~～ー]\s*(\d{1,2})(?:[:：時](\d{1,2})?分?)?/;
 
@@ -698,7 +699,7 @@ function schedulePageHTML() {
         <button class="btn btn-ghost" data-action="print">${ICON.printer}印刷</button>
       </div>
     </div>
-    <div class="sched-hint no-print">タスクのブロックは、左上の<svg style="width:11px;height:11px;vertical-align:-1px" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>をドラッグすると順番を、下端をドラッグすると長さを調整できます。</div>
+    <div class="sched-hint no-print">タスクやランチのブロックは、左上の<svg style="width:11px;height:11px;vertical-align:-1px" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>をドラッグすると時間帯を、下端をドラッグすると長さを調整できます。</div>
     <div class="timeline-wrap">
       <div class="timeline" id="timeline" style="height:${heightPx}px">
         ${marks}
@@ -714,15 +715,26 @@ function blockHTML(b, workStart) {
   const top = (b.start - workStart) * PX_PER_MIN;
   const height = Math.max(20, (b.end - b.start) * PX_PER_MIN);
   const timeLabel = `${toHHMM(b.start)}–${toHHMM(b.end)}`;
-  if (b.fixed) {
-    const cls = b.type === 'lunch' ? 'block-fixed lunch' : 'block-fixed';
+  if (b.type === 'lunch') {
     return `
-    <div class="block ${cls}" style="top:${top}px;height:${height}px" data-block-id="${b.id}">
+    <div class="block block-fixed lunch" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-lunch-block>
+      <span class="grip no-print" data-drag-handle-lunch>${ICON.grip}</span>
+      <div class="block-inner" style="padding-top:22px">
+        <div class="block-title">${escapeHTML(b.title)}</div>
+        <div class="block-time mono">${timeLabel}</div>
+      </div>
+      <span class="block-tag">ランチ</span>
+      <div class="resize-handle no-print" data-resize-handle-lunch></div>
+    </div>`;
+  }
+  if (b.fixed) {
+    return `
+    <div class="block block-fixed" style="top:${top}px;height:${height}px" data-block-id="${b.id}">
       <div class="block-inner">
         <div class="block-title">${escapeHTML(b.title)}</div>
         <div class="block-time mono">${timeLabel}</div>
       </div>
-      <span class="block-tag">${b.type === 'lunch' ? 'ランチ' : '固定'}</span>
+      <span class="block-tag">固定</span>
     </div>`;
   }
   return `
@@ -842,14 +854,77 @@ let dragCtx = null;
 app.addEventListener('pointerdown', (e) => {
   const resizeHandle = e.target.closest('[data-resize-handle]');
   const dragHandle = e.target.closest('[data-drag-handle]');
+  const lunchResize = e.target.closest('[data-resize-handle-lunch]');
+  const lunchDrag = e.target.closest('[data-drag-handle-lunch]');
   if (resizeHandle) {
     const blockEl = resizeHandle.closest('.block-task');
     startResize(blockEl, e);
   } else if (dragHandle) {
     const blockEl = dragHandle.closest('.block-task');
     startReorder(blockEl, e);
+  } else if (lunchResize) {
+    const blockEl = lunchResize.closest('[data-lunch-block]');
+    startResizeLunch(blockEl, e);
+  } else if (lunchDrag) {
+    const blockEl = lunchDrag.closest('[data-lunch-block]');
+    startMoveLunch(blockEl, e);
   }
 });
+
+function startResizeLunch(blockEl, e) {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startHeight = blockEl.getBoundingClientRect().height;
+  blockEl.classList.add('resizing');
+
+  function onMove(ev) {
+    const dy = ev.clientY - startY;
+    const newHeight = Math.max(20, startHeight + dy);
+    blockEl.style.height = newHeight + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    blockEl.classList.remove('resizing');
+    const newHeightPx = parseFloat(blockEl.style.height);
+    const workEnd = toMin(state.workEnd);
+    const lunchStartMin = toMin(state.lunchStart);
+    let newDur = Math.max(5, round5(newHeightPx / PX_PER_MIN));
+    if (workEnd != null && lunchStartMin != null) newDur = Math.min(newDur, workEnd - lunchStartMin);
+    state.lunchEnd = toHHMM(lunchStartMin + newDur);
+    render(); scheduleSaveDate();
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
+
+function startMoveLunch(blockEl, e) {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startTop = parseFloat(blockEl.style.top);
+  const workStart = toMin(state.workStart);
+  const workEnd = toMin(state.workEnd);
+  const durationMin = toMin(state.lunchEnd) - toMin(state.lunchStart);
+  blockEl.classList.add('dragging');
+
+  function onMove(ev) {
+    const dy = ev.clientY - startY;
+    blockEl.style.top = (startTop + dy) + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    blockEl.classList.remove('dragging');
+    const newTop = parseFloat(blockEl.style.top);
+    let newStart = round5(workStart + newTop / PX_PER_MIN);
+    newStart = Math.max(workStart, Math.min(newStart, workEnd - durationMin));
+    state.lunchStart = toHHMM(newStart);
+    state.lunchEnd = toHHMM(newStart + durationMin);
+    render(); scheduleSaveDate();
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+}
 
 function startResize(blockEl, e) {
   e.preventDefault();
