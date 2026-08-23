@@ -285,12 +285,6 @@
   }
   .celebrate-box svg{ width:16px; height:16px; stroke:currentColor; flex-shrink:0; }
 
-  .tape{
-    position:absolute; top:6px; right:20px; width:72px; height:24px; transform:rotate(-4deg);
-    background:repeating-linear-gradient(-45deg,var(--pri0-soft) 0 8px,var(--pri4-soft) 8px 16px);
-    opacity:.9; border-radius:2px; box-shadow:0 2px 5px rgba(38,35,31,.15); z-index:2;
-  }
-
   [data-label]{ position:relative; }
   @media (max-width:560px){
     .time-grid{ grid-template-columns:1fr; }
@@ -310,6 +304,7 @@
 
   .no-print{}
   @media print{
+    * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
     body{ background:var(--white); }
     .no-print{ display:none !important; }
     .container{ max-width:100%; padding:0; }
@@ -696,9 +691,9 @@ function schedulePageHTML() {
   if (!state.generated) {
     return `
     <div class="page">
-      <div class="sched-topline no-print">
+      <div class="sched-topline">
         <h1 class="sched-date">${fmtDateLabel(state.date)}</h1>
-        <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
+        <button class="btn btn-ghost no-print" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
       </div>
       <div class="sched-warn" style="background:var(--blue-soft);color:var(--blue)">この日はまだスケジューリングされていません。編集画面の「スケジューリングする」から作成してください。</div>
     </div>`;
@@ -709,9 +704,9 @@ function schedulePageHTML() {
   if (!sched.valid) {
     return `
     <div class="page">
-      <div class="sched-topline no-print">
+      <div class="sched-topline">
         <h1 class="sched-date">${fmtDateLabel(state.date)}</h1>
-        <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
+        <button class="btn btn-ghost no-print" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
       </div>
       <div class="sched-warn">業務時間の設定を確認してください(終了時刻は開始時刻より後にしてください)。</div>
     </div>`;
@@ -735,7 +730,7 @@ function schedulePageHTML() {
   const blocksHTML = sched.blocks.map(b => blockHTML(b, sched.workStart)).join('');
 
   const overflowHTML = sched.overflow.length ? `
-    <div class="overflow-box no-print">
+    <div class="overflow-box">
       <b>時間内に収まらなかったタスク</b>
       ${sched.overflow.map(t => escapeHTML(t.name || '(無題タスク)')).join(' / ')}
     </div>` : '';
@@ -743,22 +738,22 @@ function schedulePageHTML() {
   const totalTasks = state.scheduleTasks.length;
   const doneTasksCount = state.scheduleTasks.filter(t => t.done).length;
   const progressHTML = totalTasks ? `
-    <div class="progress-strip no-print">
+    <div class="progress-strip">
       <span class="progress-label">${doneTasksCount}/${totalTasks} 完了</span>
       <div class="progress-track"><div class="progress-fill" style="width:${Math.round(doneTasksCount/totalTasks*100)}%"></div></div>
     </div>` : '';
 
   const celebrateHTML = (totalTasks > 0 && doneTasksCount === totalTasks && sched.overflow.length === 0) ? `
-    <div class="celebrate-box no-print">${ICON.check}今日のやることはすべて完了しました</div>` : '';
+    <div class="celebrate-box">${ICON.check}今日のやることはすべて完了しました</div>` : '';
 
   return `
   <div class="page">
-    <div class="sched-topline no-print">
+    <div class="sched-topline">
       <div>
         <h1 class="sched-date">${fmtDateLabel(state.date)}</h1>
         ${sched.meetingsCount ? `<div class="sched-sub">会議 ${sched.meetingsCount}件</div>` : ''}
       </div>
-      <div class="sched-actions">
+      <div class="sched-actions no-print">
         <button class="btn btn-ghost" data-action="go-input">${ICON.arrowLeft}編集に戻る</button>
         <button class="btn btn-ghost" data-action="print">${ICON.printer}印刷</button>
       </div>
@@ -766,7 +761,6 @@ function schedulePageHTML() {
     ${progressHTML}
     <div class="sched-hint no-print">タスクやランチのブロックは、左上の<svg style="width:11px;height:11px;vertical-align:-1px" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>をドラッグすると時間帯を、下端をドラッグすると長さを調整できます。</div>
     <div class="timeline-wrap">
-      <div class="tape"></div>
       <div class="timeline" id="timeline" style="height:${heightPx}px">
         ${marks}
         ${nowLine}
