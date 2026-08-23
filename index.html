@@ -217,7 +217,7 @@
   .block-inner{ padding:6px 10px; height:100%; display:flex; flex-direction:column; gap:2px; }
   .block-fixed{ background:var(--amber-soft); border:1px solid var(--amber-line); }
   .block-fixed.lunch{
-    background:var(--green-soft);
+    background:var(--white);
     border:2px solid #7F9F82;
     box-shadow:0 1px 3px rgba(38,35,31,.12), inset 0 0 0 3px var(--white), inset 0 0 0 4px #B7CDB8;
   }
@@ -240,8 +240,8 @@
     z-index:2;
   }
   .block-fixed.lunch .block-tag{
-    background:#F7FBF5;
-    color:var(--green);
+    background:var(--white);
+    color:var(--ink);
     border-color:#9DB79F;
   }
   .block-task{ background:var(--pri1-soft); border:1px solid var(--pri1-line); }
@@ -267,8 +267,9 @@
   .block-task.done .block-title{ color:var(--ink-soft) !important; text-decoration:line-through; }
   .block-title{ font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.25; }
   .block-fixed .block-title{ color:#7A5A1E; }
-  .block-fixed.lunch .block-title{ color:#3E5A40; }
+  .block-fixed.lunch .block-title{ color:var(--ink); }
   .block-time{ font-size:10.5px; color:var(--ink-soft); }
+  .block-fixed.lunch .block-time{ color:var(--ink); }
 
   /* 30分以下の短いブロックは、操作部品のための上余白を詰めて内容と時間を表示する */
   .block.short-block .block-inner{
