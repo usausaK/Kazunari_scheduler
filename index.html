@@ -216,7 +216,34 @@
   }
   .block-inner{ padding:6px 10px; height:100%; display:flex; flex-direction:column; gap:2px; }
   .block-fixed{ background:var(--amber-soft); border:1px solid var(--amber-line); }
-  .block-fixed.lunch{ background:var(--green-soft); border:1px solid #BFD2BE; }
+  .block-fixed.lunch{
+    background:var(--green-soft);
+    border:2px solid #7F9F82;
+    box-shadow:0 1px 3px rgba(38,35,31,.12), inset 0 0 0 3px var(--white), inset 0 0 0 4px #B7CDB8;
+  }
+  .block-fixed.lunch::after{
+    content:'';
+    position:absolute;
+    inset:5px;
+    border:1px solid rgba(75,107,78,.28);
+    border-radius:4px;
+    pointer-events:none;
+    z-index:1;
+  }
+  .block-fixed.lunch .block-inner{
+    position:relative;
+    z-index:2;
+  }
+  .block-fixed.lunch .grip,
+  .block-fixed.lunch .block-tag,
+  .block-fixed.lunch .resize-handle{
+    z-index:2;
+  }
+  .block-fixed.lunch .block-tag{
+    background:#F7FBF5;
+    color:var(--green);
+    border-color:#9DB79F;
+  }
   .block-task{ background:var(--pri1-soft); border:1px solid var(--pri1-line); }
   .block-task .block-inner{ padding-left:14px; }
   .block-task::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pri1-line); }
