@@ -29,14 +29,24 @@
     --white:#FFFFFF;
     --shadow:0 1px 2px rgba(38,35,31,.08),0 6px 16px rgba(38,35,31,.07);
     --radius:10px;
+    --pri0-soft:#F6DDD3; --pri0-line:#D98A63; --pri0-text:#93401F;
+    --pri1-soft:#DCE4F1; --pri1-line:#5F86B8; --pri1-text:#274469;
+    --pri2-soft:#D9EDEB; --pri2-line:#4FA79B; --pri2-text:#215951;
+    --pri3-soft:#E9DFF0; --pri3-line:#9B72BC; --pri3-text:#5C3D79;
+    --pri4-soft:#F3DCE3; --pri4-line:#C46E8A; --pri4-text:#82304C;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--paper);
+    background:
+      radial-gradient(720px 420px at 100% -8%, rgba(196,87,59,.07), transparent 60%),
+      radial-gradient(640px 380px at -6% 12%, rgba(79,167,155,.07), transparent 55%),
+      var(--paper);
     background-image:
+      radial-gradient(720px 420px at 100% -8%, rgba(196,87,59,.07), transparent 60%),
+      radial-gradient(640px 380px at -6% 12%, rgba(79,167,155,.07), transparent 55%),
       linear-gradient(var(--paper-deep) 1px, transparent 1px);
-    background-size: 100% 32px;
+    background-size: auto, auto, 100% 32px;
     color:var(--ink);
     font-family:'Zen Kaku Gothic New', sans-serif;
     -webkit-font-smoothing:antialiased;
@@ -177,7 +187,7 @@
 
   .timeline-wrap{
     background:var(--white); border:1px solid var(--rule); border-radius:var(--radius);
-    box-shadow:var(--shadow); padding:18px 14px 24px 0; overflow:hidden;
+    box-shadow:var(--shadow); padding:18px 14px 24px 0; overflow:hidden; position:relative;
   }
   .timeline{ position:relative; margin-left:64px; border-left:2px solid var(--rule-red); }
   .hour-mark{
@@ -195,6 +205,10 @@
     content:''; position:absolute; left:-4px; top:-4px; width:8px; height:8px;
     border-radius:50%; background:var(--red);
   }
+  .now-line-label{
+    position:absolute; left:8px; top:-9px; font-size:10px; font-weight:700; color:var(--white);
+    background:var(--red); padding:1px 7px; border-radius:20px; letter-spacing:.02em;
+  }
 
   .block{
     position:absolute; left:10px; right:10px; border-radius:8px; overflow:hidden;
@@ -203,8 +217,27 @@
   .block-inner{ padding:6px 10px; height:100%; display:flex; flex-direction:column; gap:2px; }
   .block-fixed{ background:var(--amber-soft); border:1px solid var(--amber-line); }
   .block-fixed.lunch{ background:var(--green-soft); border:1px solid #BFD2BE; }
-  .block-task{ background:var(--blue-soft); border:1px solid var(--blue-line); }
+  .block-task{ background:var(--pri1-soft); border:1px solid var(--pri1-line); }
+  .block-task .block-inner{ padding-left:14px; }
+  .block-task::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pri1-line); }
+  .block-task.pri-0{ background:var(--pri0-soft); border-color:var(--pri0-line); }
+  .block-task.pri-0::before{ background:var(--pri0-line); }
+  .block-task.pri-0 .block-title{ color:var(--pri0-text); }
+  .block-task.pri-1{ background:var(--pri1-soft); border-color:var(--pri1-line); }
+  .block-task.pri-1::before{ background:var(--pri1-line); }
+  .block-task.pri-1 .block-title{ color:var(--pri1-text); }
+  .block-task.pri-2{ background:var(--pri2-soft); border-color:var(--pri2-line); }
+  .block-task.pri-2::before{ background:var(--pri2-line); }
+  .block-task.pri-2 .block-title{ color:var(--pri2-text); }
+  .block-task.pri-3{ background:var(--pri3-soft); border-color:var(--pri3-line); }
+  .block-task.pri-3::before{ background:var(--pri3-line); }
+  .block-task.pri-3 .block-title{ color:var(--pri3-text); }
+  .block-task.pri-4{ background:var(--pri4-soft); border-color:var(--pri4-line); }
+  .block-task.pri-4::before{ background:var(--pri4-line); }
+  .block-task.pri-4 .block-title{ color:var(--pri4-text); }
   .block-task.done{ background:var(--paper-deep); border:1px solid var(--rule); }
+  .block-task.done::before{ background:var(--ink-faint); }
+  .block-task.done .block-title{ color:var(--ink-soft) !important; text-decoration:line-through; }
   .block-title{ font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.25; }
   .block-fixed .block-title{ color:#7A5A1E; }
   .block-fixed.lunch .block-title{ color:#3E5A40; }
@@ -214,14 +247,18 @@
     background:var(--white); color:var(--blue); font-weight:700; border:1px solid var(--blue-line);
   }
   .block-task .grip, .block-fixed.lunch .grip{
-    position:absolute; top:4px; left:4px; width:16px; height:16px; cursor:grab;
+    position:absolute; top:4px; left:8px; width:16px; height:16px; cursor:grab;
     color:var(--ink-faint); display:flex; align-items:center; justify-content:center;
   }
   .block-task .grip svg, .block-fixed.lunch .grip svg{ width:12px; height:12px; }
   .block-task .done-toggle{
-    position:absolute; top:4px; right:4px; width:16px; height:16px; border-radius:4px;
-    border:1.5px solid var(--blue-line); background:var(--white); display:flex; align-items:center; justify-content:center;
+    position:absolute; top:4px; right:4px; width:17px; height:17px; border-radius:5px;
+    border:1.5px solid var(--pri1-line); background:var(--white); display:flex; align-items:center; justify-content:center;
   }
+  .block-task.pri-0 .done-toggle{ border-color:var(--pri0-line); }
+  .block-task.pri-2 .done-toggle{ border-color:var(--pri2-line); }
+  .block-task.pri-3 .done-toggle{ border-color:var(--pri3-line); }
+  .block-task.pri-4 .done-toggle{ border-color:var(--pri4-line); }
   .block-task.done .done-toggle{ background:var(--green); border-color:var(--green); }
   .block-task .done-toggle svg{ width:11px; height:11px; stroke:var(--white); opacity:0; }
   .block-task.done .done-toggle svg{ opacity:1; }
@@ -237,6 +274,22 @@
     margin-top:14px; padding:12px 14px; background:var(--red-soft); border-radius:8px; font-size:13px; color:var(--red);
   }
   .overflow-box b{ display:block; margin-bottom:4px; font-size:12.5px; }
+
+  .progress-strip{ display:flex; align-items:center; gap:10px; margin:10px 0 16px; }
+  .progress-label{ font-size:12.5px; font-weight:700; color:var(--ink-soft); white-space:nowrap; }
+  .progress-track{ flex:1; height:8px; border-radius:20px; background:var(--paper-deep); overflow:hidden; }
+  .progress-fill{ height:100%; border-radius:20px; background:linear-gradient(90deg,var(--pri0-line),var(--pri3-line)); transition:width .3s ease; }
+  .celebrate-box{
+    margin-top:14px; padding:12px 14px; border-radius:8px; font-size:13.5px; font-weight:700;
+    background:var(--pri2-soft); color:var(--pri2-text); display:flex; align-items:center; gap:8px;
+  }
+  .celebrate-box svg{ width:16px; height:16px; stroke:currentColor; flex-shrink:0; }
+
+  .tape{
+    position:absolute; top:6px; right:20px; width:72px; height:24px; transform:rotate(-4deg);
+    background:repeating-linear-gradient(-45deg,var(--pri0-soft) 0 8px,var(--pri4-soft) 8px 16px);
+    opacity:.9; border-radius:2px; box-shadow:0 2px 5px rgba(38,35,31,.15); z-index:2;
+  }
 
   [data-label]{ position:relative; }
   @media (max-width:560px){
@@ -495,7 +548,7 @@ function buildSchedule() {
       if (segCursor >= segs[segIdx].end) { segIdx++; segCursor = segs[segIdx] ? segs[segIdx].start : null; continue; }
       const availableInSeg = segs[segIdx].end - segCursor;
       const take = Math.min(availableInSeg, remaining);
-      taskBlocks.push({ id: 'blk-' + t.id + '-' + segIdx, type: 'task', taskId: t.id, title: t.name || '(無題タスク)', start: segCursor, end: segCursor + take, done: !!t.done });
+      taskBlocks.push({ id: 'blk-' + t.id + '-' + segIdx, type: 'task', taskId: t.id, title: t.name || '(無題タスク)', start: segCursor, end: segCursor + take, done: !!t.done, priority: t.priority ?? 1 });
       segCursor += take;
       remaining -= take;
       placedAny = true;
@@ -676,7 +729,7 @@ function schedulePageHTML() {
 
   let nowLine = '';
   if (isToday && nowMin >= sched.workStart && nowMin <= sched.workEnd) {
-    nowLine = `<div class="now-line" style="top:${(nowMin - sched.workStart) * PX_PER_MIN}px"></div>`;
+    nowLine = `<div class="now-line" style="top:${(nowMin - sched.workStart) * PX_PER_MIN}px"><span class="now-line-label">いま</span></div>`;
   }
 
   const blocksHTML = sched.blocks.map(b => blockHTML(b, sched.workStart)).join('');
@@ -686,6 +739,17 @@ function schedulePageHTML() {
       <b>時間内に収まらなかったタスク</b>
       ${sched.overflow.map(t => escapeHTML(t.name || '(無題タスク)')).join(' / ')}
     </div>` : '';
+
+  const totalTasks = state.scheduleTasks.length;
+  const doneTasksCount = state.scheduleTasks.filter(t => t.done).length;
+  const progressHTML = totalTasks ? `
+    <div class="progress-strip no-print">
+      <span class="progress-label">${doneTasksCount}/${totalTasks} 完了</span>
+      <div class="progress-track"><div class="progress-fill" style="width:${Math.round(doneTasksCount/totalTasks*100)}%"></div></div>
+    </div>` : '';
+
+  const celebrateHTML = (totalTasks > 0 && doneTasksCount === totalTasks && sched.overflow.length === 0) ? `
+    <div class="celebrate-box no-print">${ICON.check}今日のやることはすべて完了しました</div>` : '';
 
   return `
   <div class="page">
@@ -699,14 +763,17 @@ function schedulePageHTML() {
         <button class="btn btn-ghost" data-action="print">${ICON.printer}印刷</button>
       </div>
     </div>
+    ${progressHTML}
     <div class="sched-hint no-print">タスクやランチのブロックは、左上の<svg style="width:11px;height:11px;vertical-align:-1px" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg>をドラッグすると時間帯を、下端をドラッグすると長さを調整できます。</div>
     <div class="timeline-wrap">
+      <div class="tape"></div>
       <div class="timeline" id="timeline" style="height:${heightPx}px">
         ${marks}
         ${nowLine}
         ${blocksHTML}
       </div>
     </div>
+    ${celebrateHTML}
     ${overflowHTML}
   </div>`;
 }
@@ -737,8 +804,9 @@ function blockHTML(b, workStart) {
       <span class="block-tag">固定</span>
     </div>`;
   }
+  const priIdx = ((((b.priority ?? 1) - 1) % 5) + 5) % 5;
   return `
-  <div class="block block-task ${b.done ? 'done' : ''}" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-task-id="${b.taskId}">
+  <div class="block block-task pri-${priIdx} ${b.done ? 'done' : ''}" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-task-id="${b.taskId}">
     <span class="grip no-print" data-drag-handle>${ICON.grip}</span>
     <button class="done-toggle no-print" data-action="toggle-done" aria-label="完了">${ICON.check}</button>
     <div class="block-inner" style="padding-top:22px">
