@@ -106,13 +106,14 @@
   /* task table */
   .task-table{ display:flex; flex-direction:column; gap:8px; }
   .task-head-row{
-    display:grid; grid-template-columns: 1fr 128px 78px 30px;
+    display:grid; grid-template-columns:32px 1fr 128px 78px 30px;
     gap:8px; padding:0 4px; font-size:11.5px; color:var(--ink-faint);
   }
   .task-row{
-    display:grid; grid-template-columns: 1fr 128px 78px 30px;
+    display:grid; grid-template-columns:32px 1fr 128px 78px 30px;
     gap:8px; align-items:center; background:var(--paper); border:1px solid var(--rule);
     border-radius:8px; padding:7px 8px;
+    transition:box-shadow .15s ease, opacity .15s ease;
   }
   .task-row.done{ opacity:.55; }
   .task-row input[type=text]{
@@ -121,8 +122,22 @@
   .task-row input[type=date]{
     border:none; background:transparent; font-size:12.5px; color:var(--ink-soft); width:100%;
   }
-  .task-row input[type=number]{
-    border:none; background:transparent; font-size:13px; color:var(--ink); width:100%; text-align:center;
+  .task-drag-handle{
+    width:28px; height:36px; border:none; border-radius:6px; background:transparent;
+    color:var(--ink-faint); display:flex; align-items:center; justify-content:center;
+    cursor:grab; touch-action:none;
+  }
+  .task-drag-handle:hover{ background:var(--paper-deep); color:var(--blue); }
+  .task-drag-handle:active{ cursor:grabbing; }
+  .task-drag-handle svg{ width:16px; height:16px; }
+  .priority-number{
+    display:inline-flex; min-width:28px; height:28px; align-items:center; justify-content:center;
+    border-radius:50%; background:var(--white); border:1px solid var(--rule);
+    color:var(--blue); font-size:13px; font-weight:700;
+  }
+  .f-priority{ display:flex; justify-content:center; }
+  .task-row.task-list-dragging{
+    opacity:.6; box-shadow:0 8px 20px rgba(38,35,31,.18);
   }
   .task-row input:focus{ outline:2px solid var(--blue-line); outline-offset:1px; border-radius:4px; }
   .icon-btn{
@@ -371,11 +386,15 @@
     .time-grid{ grid-template-columns:1fr; }
     .task-head-row{ display:none; }
     .task-row{
-      grid-template-columns:1fr 30px; grid-template-rows:auto auto; row-gap:6px;
+      grid-template-columns:30px 1fr 30px; grid-template-rows:auto auto auto; row-gap:6px;
     }
-    .task-row .f-name{ grid-column:1/2; grid-row:1; }
-    .task-row .f-del{ grid-column:2/3; grid-row:1; }
-    .task-row .f-deadline, .task-row .f-priority{ grid-column:1/2; grid-row:2; display:flex; align-items:center; gap:6px; }
+    .task-row .task-drag-handle{ grid-column:1/2; grid-row:1/4; align-self:stretch; height:auto; }
+    .task-row .f-name{ grid-column:2/3; grid-row:1; }
+    .task-row .f-del{ grid-column:3/4; grid-row:1; }
+    .task-row .f-deadline, .task-row .f-priority{
+      grid-column:2/4; display:flex; align-items:center; justify-content:flex-start; gap:6px;
+    }
+    .task-row .f-deadline{ grid-row:2; }
     .task-row .f-priority{ grid-row:3; }
     .task-row [data-label]::before{
       content:attr(data-label); font-size:10.5px; color:var(--ink-faint); white-space:nowrap;
@@ -563,6 +582,16 @@ let state = { masterTasks: [], page: 'input', ...defaultDateState(fmtDate(new Da
 
 function resetDateFields(dateStr) { Object.assign(state, defaultDateState(dateStr)); }
 
+function renumberMasterTasks() {
+  let changed = false;
+  state.masterTasks.forEach((task, index) => {
+    const priority = index + 1;
+    if (task.priority !== priority) changed = true;
+    task.priority = priority;
+  });
+  return changed;
+}
+
 let unsubscribeMaster = null;
 let unsubscribeDate = null;
 let saveTimerDate = null;
@@ -578,8 +607,10 @@ function attachMasterListener() {
   unsubscribeMaster = onSnapshot(ref, (snap) => {
     if (snap.metadata.hasPendingWrites) return;
     state.masterTasks = snap.exists() ? (snap.data().tasks || []) : [];
+    const prioritiesChanged = renumberMasterTasks();
     setSync('ok');
     render();
+    if (prioritiesChanged) scheduleSaveMaster();
   }, (err) => { console.warn('master onSnapshot error', err); setSync('off'); });
 }
 
@@ -779,7 +810,7 @@ function inputPageHTML() {
     <div class="card">
       <div class="card-head"><h2>やることリスト</h2><span class="hint">日をまたいで持ち越されます</span></div>
       <div class="task-table">
-        <div class="task-head-row"><span>タスク</span><span>期限</span><span>優先度</span><span></span></div>
+        <div class="task-head-row"><span></span><span>タスク</span><span>期限</span><span>優先度</span><span></span></div>
         ${tasks.length ? tasks.map(taskRowHTML).join('') : '<div class="empty-hint">まだタスクがありません。「追加」から始めましょう。</div>'}
       </div>
       <button class="add-row-btn" data-action="add-task">${ICON.plus}追加</button>
@@ -820,9 +851,10 @@ function inputPageHTML() {
 function taskRowHTML(t) {
   return `
   <div class="task-row ${t.done ? 'done' : ''}" data-task-id="${t.id}">
+    <button class="task-drag-handle" type="button" aria-label="このタスクを並べ替える">${ICON.grip}</button>
     <div class="f-name" data-label="タスク"><input type="text" placeholder="タスク名" value="${escapeAttr(t.name)}" data-task-field="name"></div>
     <div class="f-deadline" data-label="期限"><input type="date" value="${t.deadline || ''}" data-task-field="deadline"></div>
-    <div class="f-priority" data-label="優先度"><input type="number" min="1" value="${t.priority ?? 1}" data-task-field="priority"></div>
+    <div class="f-priority" data-label="優先度"><span class="priority-number">${t.priority ?? 1}</span></div>
     <div class="f-del"><button class="icon-btn" data-action="delete-task" aria-label="削除">${ICON.trash}</button></div>
   </div>`;
 }
@@ -985,13 +1017,13 @@ app.addEventListener('click', (e) => {
   const action = btn.dataset.action;
 
   if (action === 'add-task') {
-    const maxP = state.masterTasks.reduce((m,t) => Math.max(m, t.priority || 0), 0);
-    state.masterTasks.push({ id: uid(), name: '', deadline: '', priority: maxP + 1, done: false });
+    state.masterTasks.push({ id: uid(), name: '', deadline: '', priority: state.masterTasks.length + 1, done: false });
     render(); scheduleSaveMaster();
   } else if (action === 'delete-task') {
     const row = e.target.closest('[data-task-id]');
     const id = row.dataset.taskId;
     state.masterTasks = state.masterTasks.filter(t => t.id !== id);
+    renumberMasterTasks();
     render(); scheduleSaveMaster();
   } else if (action === 'prev-day') {
     changeDate(-1);
@@ -1067,7 +1099,72 @@ function changeDate(delta) {
 }
 
 /* =========================================================
-   Drag to reorder / resize (pointer events, touch-friendly)
+   Task list drag reorder (pointer events, touch-friendly)
+   ========================================================= */
+app.addEventListener('pointerdown', (e) => {
+  const handle = e.target.closest('.task-drag-handle');
+  if (!handle) return;
+  startTaskListReorder(handle, e);
+});
+
+function startTaskListReorder(handle, e) {
+  if (e.button != null && e.button !== 0) return;
+  const row = handle.closest('.task-row');
+  const table = row?.closest('.task-table');
+  if (!row || !table) return;
+
+  e.preventDefault();
+  const pointerId = e.pointerId;
+  let moved = false;
+  row.classList.add('task-list-dragging');
+  document.body.style.userSelect = 'none';
+  try { handle.setPointerCapture(pointerId); } catch (_) {}
+
+  function onMove(ev) {
+    if (ev.pointerId !== pointerId) return;
+    ev.preventDefault();
+    const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.task-row');
+    if (!target || target === row || target.parentElement !== table) return;
+
+    moved = true;
+    const rect = target.getBoundingClientRect();
+    if (ev.clientY < rect.top + rect.height / 2) {
+      table.insertBefore(row, target);
+    } else {
+      table.insertBefore(row, target.nextSibling);
+    }
+
+    Array.from(table.querySelectorAll('.task-row')).forEach((taskRow, index) => {
+      const number = taskRow.querySelector('.priority-number');
+      if (number) number.textContent = String(index + 1);
+    });
+  }
+
+  function finish(ev) {
+    if (ev.pointerId !== pointerId) return;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    row.classList.remove('task-list-dragging');
+    document.body.style.userSelect = '';
+    try { handle.releasePointerCapture(pointerId); } catch (_) {}
+
+    if (!moved) return;
+    const taskById = new Map(state.masterTasks.map(task => [task.id, task]));
+    const orderedIds = Array.from(table.querySelectorAll('.task-row')).map(taskRow => taskRow.dataset.taskId);
+    state.masterTasks = orderedIds.map(id => taskById.get(id)).filter(Boolean);
+    renumberMasterTasks();
+    render();
+    scheduleSaveMaster();
+  }
+
+  document.addEventListener('pointermove', onMove, { passive:false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+}
+
+/* =========================================================
+   Schedule drag reorder / resize (pointer events, touch-friendly)
    ========================================================= */
 let dragCtx = null;
 
