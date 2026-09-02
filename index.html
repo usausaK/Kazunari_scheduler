@@ -136,8 +136,11 @@
     color:var(--blue); font-size:13px; font-weight:700;
   }
   .f-priority{ display:flex; justify-content:center; }
-  .task-row.task-list-dragging{
-    opacity:.6; box-shadow:0 8px 20px rgba(38,35,31,.18);
+  .task-row.task-list-placeholder{ visibility:hidden; }
+  .task-drag-ghost{
+    position:fixed; z-index:1000; margin:0; pointer-events:none;
+    opacity:.94; box-shadow:0 12px 28px rgba(38,35,31,.24);
+    will-change:transform;
   }
   .task-row input:focus{ outline:2px solid var(--blue-line); outline-offset:1px; border-radius:4px; }
   .icon-btn{
@@ -1115,24 +1118,75 @@ function startTaskListReorder(handle, e) {
 
   e.preventDefault();
   const pointerId = e.pointerId;
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startRect = row.getBoundingClientRect();
+  const previousUserSelect = document.body.style.userSelect;
+  let latestX = startX;
+  let latestY = startY;
+  let frameId = null;
   let moved = false;
-  row.classList.add('task-list-dragging');
+  const shiftAnimations = new WeakMap();
+
+  const ghost = row.cloneNode(true);
+  ghost.classList.remove('task-list-placeholder');
+  ghost.classList.add('task-drag-ghost');
+  Object.assign(ghost.style, {
+    left: startRect.left + 'px',
+    top: startRect.top + 'px',
+    width: startRect.width + 'px',
+    height: startRect.height + 'px',
+    transform: 'translate3d(0,0,0)',
+  });
+  document.body.appendChild(ghost);
+  row.classList.add('task-list-placeholder');
   document.body.style.userSelect = 'none';
   try { handle.setPointerCapture(pointerId); } catch (_) {}
 
-  function onMove(ev) {
-    if (ev.pointerId !== pointerId) return;
-    ev.preventDefault();
-    const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.task-row');
-    if (!target || target === row || target.parentElement !== table) return;
+  function stopShiftAnimation(taskRow) {
+    const animation = shiftAnimations.get(taskRow);
+    if (animation?.raf) cancelAnimationFrame(animation.raf);
+    if (animation?.timer) clearTimeout(animation.timer);
+    shiftAnimations.delete(taskRow);
+    taskRow.style.transition = 'none';
+    taskRow.style.transform = '';
+  }
 
+  function animatePlacement(target, placeBefore) {
+    if ((placeBefore && row.nextSibling === target) ||
+        (!placeBefore && target.nextSibling === row)) return;
+
+    const rows = Array.from(table.querySelectorAll('.task-row'));
+    const beforeTops = new Map(rows.map(taskRow => [taskRow, taskRow.getBoundingClientRect().top]));
+    rows.forEach(taskRow => {
+      if (taskRow !== row) stopShiftAnimation(taskRow);
+    });
+
+    table.insertBefore(row, placeBefore ? target : target.nextSibling);
     moved = true;
-    const rect = target.getBoundingClientRect();
-    if (ev.clientY < rect.top + rect.height / 2) {
-      table.insertBefore(row, target);
-    } else {
-      table.insertBefore(row, target.nextSibling);
-    }
+
+    rows.forEach(taskRow => {
+      if (taskRow === row) return;
+      const beforeTop = beforeTops.get(taskRow);
+      const afterTop = taskRow.getBoundingClientRect().top;
+      const delta = beforeTop - afterTop;
+      if (Math.abs(delta) < .5) return;
+
+      taskRow.style.transform = `translate3d(0,${delta}px,0)`;
+      const animation = { raf:null, timer:null };
+      animation.raf = requestAnimationFrame(() => {
+        animation.raf = null;
+        taskRow.style.transition = 'transform 180ms cubic-bezier(.2,.8,.2,1)';
+        taskRow.style.transform = 'translate3d(0,0,0)';
+        animation.timer = setTimeout(() => {
+          if (shiftAnimations.get(taskRow) !== animation) return;
+          taskRow.style.transition = '';
+          taskRow.style.transform = '';
+          shiftAnimations.delete(taskRow);
+        }, 190);
+      });
+      shiftAnimations.set(taskRow, animation);
+    });
 
     Array.from(table.querySelectorAll('.task-row')).forEach((taskRow, index) => {
       const number = taskRow.querySelector('.priority-number');
@@ -1140,22 +1194,56 @@ function startTaskListReorder(handle, e) {
     });
   }
 
+  function updateDragFrame() {
+    frameId = null;
+    ghost.style.transform = `translate3d(0,${latestY - startY}px,0)`;
+
+    const target = document.elementFromPoint(latestX, latestY)?.closest('.task-row');
+    if (!target || target === row || target.parentElement !== table) return;
+    const rect = target.getBoundingClientRect();
+    animatePlacement(target, latestY < rect.top + rect.height / 2);
+  }
+
+  function onMove(ev) {
+    if (ev.pointerId !== pointerId) return;
+    ev.preventDefault();
+    latestX = ev.clientX;
+    latestY = ev.clientY;
+    if (frameId == null) frameId = requestAnimationFrame(updateDragFrame);
+  }
+
   function finish(ev) {
     if (ev.pointerId !== pointerId) return;
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', finish);
     document.removeEventListener('pointercancel', finish);
-    row.classList.remove('task-list-dragging');
-    document.body.style.userSelect = '';
+    if (frameId != null) {
+      cancelAnimationFrame(frameId);
+      frameId = null;
+      updateDragFrame();
+    }
+    document.body.style.userSelect = previousUserSelect;
     try { handle.releasePointerCapture(pointerId); } catch (_) {}
 
-    if (!moved) return;
-    const taskById = new Map(state.masterTasks.map(task => [task.id, task]));
-    const orderedIds = Array.from(table.querySelectorAll('.task-row')).map(taskRow => taskRow.dataset.taskId);
-    state.masterTasks = orderedIds.map(id => taskById.get(id)).filter(Boolean);
-    renumberMasterTasks();
-    render();
-    scheduleSaveMaster();
+    if (moved) {
+      const taskById = new Map(state.masterTasks.map(task => [task.id, task]));
+      const orderedIds = Array.from(table.querySelectorAll('.task-row')).map(taskRow => taskRow.dataset.taskId);
+      state.masterTasks = orderedIds.map(id => taskById.get(id)).filter(Boolean);
+      renumberMasterTasks();
+      scheduleSaveMaster();
+    }
+
+    const finalRect = row.getBoundingClientRect();
+    const finalY = finalRect.top - startRect.top;
+    ghost.style.transition = 'transform 160ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease';
+    requestAnimationFrame(() => {
+      ghost.style.transform = `translate3d(0,${finalY}px,0)`;
+      ghost.style.opacity = '.72';
+    });
+    setTimeout(() => {
+      ghost.remove();
+      row.classList.remove('task-list-placeholder');
+    }, 170);
   }
 
   document.addEventListener('pointermove', onMove, { passive:false });
