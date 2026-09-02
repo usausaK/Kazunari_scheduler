@@ -348,6 +348,7 @@
   .block-task .grip, .block-fixed.lunch .grip{
     position:absolute; top:4px; left:8px; width:16px; height:16px; cursor:grab;
     color:var(--ink-faint); display:flex; align-items:center; justify-content:center;
+    touch-action:none;
   }
   .block-task .grip svg, .block-fixed.lunch .grip svg{ width:12px; height:12px; }
   .block-task .done-toggle{
@@ -362,8 +363,9 @@
   .block-task .done-toggle svg{ width:11px; height:11px; stroke:var(--white); opacity:0; }
   .block-task.done .done-toggle svg{ opacity:1; }
   .resize-handle{
-    position:absolute; left:0; right:0; bottom:0; height:9px; cursor:ns-resize;
-    display:flex; align-items:flex-end; justify-content:center; padding-bottom:1px;
+    position:absolute; left:0; right:0; bottom:0; height:12px; cursor:ns-resize;
+    display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px;
+    touch-action:none;
   }
   .resize-handle::after{ content:''; width:22px; height:3px; border-radius:2px; background:var(--blue-line); }
   .block.dragging{ opacity:.55; z-index:20; }
@@ -726,8 +728,10 @@ function buildSchedule() {
   const taskBlocks = [];
 
   for (const t of pending) {
-    let remaining = t.manualDuration || autoDuration;
+    const plannedDuration = t.manualDuration || autoDuration;
+    let remaining = plannedDuration;
     if (remaining <= 0) { result.overflow.push(t); continue; }
+    const firstPartIndex = taskBlocks.length;
     let placedAny = false;
     while (remaining > 0 && segIdx < segs.length) {
       if (segCursor >= segs[segIdx].end) { segIdx++; segCursor = segs[segIdx] ? segs[segIdx].start : null; continue; }
@@ -739,6 +743,14 @@ function buildSchedule() {
       placedAny = true;
       if (segCursor >= segs[segIdx].end) { segIdx++; segCursor = segs[segIdx] ? segs[segIdx].start : null; }
     }
+
+    const taskParts = taskBlocks.slice(firstPartIndex);
+    taskParts.forEach((part, index) => {
+      part.partIndex = index + 1;
+      part.partCount = taskParts.length;
+      part.totalDuration = plannedDuration;
+    });
+
     if (remaining > 0) result.overflow.push(t);
     else if (!placedAny) result.overflow.push(t);
   }
@@ -967,7 +979,11 @@ function blockHTML(b, workStart) {
   const top = (b.start - workStart) * PX_PER_MIN;
   const height = Math.max(20, (b.end - b.start) * PX_PER_MIN);
   const durationMin = Math.round(b.end - b.start);
-  const timeLabel = `${toHHMM(b.start)}–${toHHMM(b.end)}（${durationMin}分）`;
+  const isSplitTask = b.type === 'task' && (b.partCount || 1) > 1;
+  const totalDuration = Math.round(b.totalDuration || durationMin);
+  const timeLabel = isSplitTask
+    ? `${toHHMM(b.start)}–${toHHMM(b.end)}（この枠${durationMin}分・合計${totalDuration}分）`
+    : `${toHHMM(b.start)}–${toHHMM(b.end)}（${durationMin}分）`;
   const sizeClass = durationMin <= 20 ? 'short-block tiny-block' : (durationMin <= 30 ? 'short-block' : '');
   if (b.type === 'lunch') {
     return `
@@ -992,15 +1008,16 @@ function blockHTML(b, workStart) {
     </div>`;
   }
   const priIdx = ((((b.priority ?? 1) - 1) % 5) + 5) % 5;
+  const isLastPart = (b.partIndex || 1) === (b.partCount || 1);
   return `
-  <div class="block block-task pri-${priIdx} ${sizeClass} ${b.done ? 'done' : ''}" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-task-id="${b.taskId}">
+  <div class="block block-task pri-${priIdx} ${sizeClass} ${b.done ? 'done' : ''}" style="top:${top}px;height:${height}px" data-block-id="${b.id}" data-task-id="${b.taskId}" data-part-index="${b.partIndex || 1}" data-part-count="${b.partCount || 1}">
     <span class="grip no-print" data-drag-handle>${ICON.grip}</span>
     <button class="done-toggle no-print" data-action="toggle-done" aria-label="完了">${ICON.check}</button>
     <div class="block-inner" style="padding-top:22px">
       <div class="block-title">${escapeHTML(b.title)}</div>
       <div class="block-time mono">${timeLabel}</div>
     </div>
-    <div class="resize-handle no-print" data-resize-handle></div>
+    ${isLastPart ? '<div class="resize-handle no-print" data-resize-handle></div>' : ''}
   </div>`;
 }
 
@@ -1332,72 +1349,168 @@ function startMoveLunch(blockEl, e) {
 }
 
 function startResize(blockEl, e) {
+  if (e.button != null && e.button !== 0) return;
   e.preventDefault();
   const taskId = blockEl.dataset.taskId;
-  const startY = e.clientY;
-  const startHeight = blockEl.getBoundingClientRect().height;
+  const task = state.scheduleTasks.find(t => t.id === taskId);
+  const timeline = document.getElementById('timeline');
+  const sched = buildSchedule();
+  const taskParts = sched.blocks.filter(b => b.type === 'task' && b.taskId === taskId);
+  const activePart = taskParts.find(b => b.id === blockEl.dataset.blockId);
+  if (!task || !timeline || !taskParts.length || !activePart) return;
+
+  const pointerId = e.pointerId;
+  const captureEl = e.target.closest('[data-resize-handle]') || blockEl;
+  const timelineRect = timeline.getBoundingClientRect();
+  const taskStart = Math.min(...taskParts.map(b => b.start));
+  const fixedBlocks = sched.blocks.filter(b => b.fixed);
+  const originalLabel = blockEl.querySelector('.block-time')?.textContent || '';
   blockEl.classList.add('resizing');
+  try { captureEl.setPointerCapture(pointerId); } catch (_) {}
+
+  function pointerToMinute(clientY) {
+    const ratio = (clientY - timelineRect.top) / Math.max(1, timelineRect.height);
+    const rawMinute = sched.workStart + ratio * (sched.workEnd - sched.workStart);
+    return Math.max(taskStart + 5, Math.min(sched.workEnd, round5(rawMinute)));
+  }
+
+  function availableTaskMinutes(endMinute) {
+    let available = Math.max(0, endMinute - taskStart);
+    for (const fixed of fixedBlocks) {
+      const overlap = Math.max(0, Math.min(endMinute, fixed.end) - Math.max(taskStart, fixed.start));
+      available -= overlap;
+    }
+    return Math.max(5, clamp5(available));
+  }
+
+  function preview(clientY) {
+    const candidateEnd = pointerToMinute(clientY);
+    const visualDuration = Math.max(5, candidateEnd - activePart.start);
+    blockEl.style.height = Math.max(20, visualDuration * PX_PER_MIN) + 'px';
+    const label = blockEl.querySelector('.block-time');
+    if (label) {
+      label.textContent = `${toHHMM(activePart.start)}–${toHHMM(candidateEnd)}（合計${availableTaskMinutes(candidateEnd)}分）`;
+    }
+    return candidateEnd;
+  }
 
   function onMove(ev) {
-    const dy = ev.clientY - startY;
-    const newHeight = Math.max(20, startHeight + dy);
-    blockEl.style.height = newHeight + 'px';
+    if (ev.pointerId !== pointerId) return;
+    ev.preventDefault();
+    preview(ev.clientY);
   }
-  function onUp(ev) {
+
+  function finish(ev) {
+    if (ev.pointerId !== pointerId) return;
     document.removeEventListener('pointermove', onMove);
-    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
     blockEl.classList.remove('resizing');
-    const dy = ev.clientY - startY;
-    const currentDur = (parseFloat(blockEl.style.height) / PX_PER_MIN);
-    const task = state.scheduleTasks.find(t => t.id === taskId);
-    if (task) {
-      const newDur = clamp5(currentDur);
-      task.manualDuration = Math.max(5, newDur);
+    try { captureEl.releasePointerCapture(pointerId); } catch (_) {}
+
+    if (ev.type === 'pointercancel') {
+      const label = blockEl.querySelector('.block-time');
+      if (label) label.textContent = originalLabel;
+      render();
+      return;
     }
-    render(); scheduleSaveDate();
+
+    const candidateEnd = preview(ev.clientY);
+    task.manualDuration = availableTaskMinutes(candidateEnd);
+    render();
+    scheduleSaveDate();
   }
-  document.addEventListener('pointermove', onMove);
-  document.addEventListener('pointerup', onUp);
+
+  document.addEventListener('pointermove', onMove, { passive:false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
 }
 
 function startReorder(blockEl, e) {
+  if (e.button != null && e.button !== 0) return;
   e.preventDefault();
   const taskId = blockEl.dataset.taskId;
   const timeline = document.getElementById('timeline');
-  const taskBlocks = Array.from(timeline.querySelectorAll('.block-task'));
+  const allTaskBlocks = Array.from(timeline.querySelectorAll('.block-task'));
+  const selectedBlocks = allTaskBlocks.filter(el => el.dataset.taskId === taskId);
+  if (!selectedBlocks.length) return;
+
+  const pointerId = e.pointerId;
+  const captureEl = e.target.closest('[data-drag-handle]') || blockEl;
   const startY = e.clientY;
   const startTop = parseFloat(blockEl.style.top);
-  blockEl.classList.add('dragging');
-  blockEl.style.zIndex = 20;
+  let latestY = startY;
+
+  selectedBlocks.forEach(el => {
+    el.classList.add('dragging');
+    el.style.zIndex = 20;
+  });
+  try { captureEl.setPointerCapture(pointerId); } catch (_) {}
 
   function onMove(ev) {
-    const dy = ev.clientY - startY;
-    blockEl.style.top = (startTop + dy) + 'px';
+    if (ev.pointerId !== pointerId) return;
+    ev.preventDefault();
+    latestY = ev.clientY;
+    const dy = latestY - startY;
+    selectedBlocks.forEach(el => {
+      el.style.transform = `translate3d(0,${dy}px,0)`;
+    });
   }
-  function onUp() {
+
+  function finish(ev) {
+    if (ev.pointerId !== pointerId) return;
     document.removeEventListener('pointermove', onMove);
-    document.removeEventListener('pointerup', onUp);
-    blockEl.classList.remove('dragging');
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    try { captureEl.releasePointerCapture(pointerId); } catch (_) {}
 
-    // determine new order based on resulting vertical center position among task blocks
-    const newTop = parseFloat(blockEl.style.top);
-    const others = taskBlocks.filter(el => el !== blockEl)
-      .map(el => ({ id: el.dataset.taskId, top: parseFloat(el.style.top) }));
-    others.sort((a,b) => a.top - b.top);
-    let insertIdx = others.findIndex(o => newTop < o.top);
-    if (insertIdx === -1) insertIdx = others.length;
-    const newOrderIds = others.map(o => o.id);
+    selectedBlocks.forEach(el => {
+      el.classList.remove('dragging');
+      el.style.transform = '';
+      el.style.zIndex = '';
+    });
+
+    if (ev.type === 'pointercancel') {
+      render();
+      return;
+    }
+
+    const newTop = startTop + (latestY - startY);
+    const firstTopByTask = new Map();
+    allTaskBlocks.forEach(el => {
+      const id = el.dataset.taskId;
+      if (id === taskId) return;
+      const top = parseFloat(el.style.top);
+      if (!firstTopByTask.has(id) || top < firstTopByTask.get(id)) firstTopByTask.set(id, top);
+    });
+
+    const visibleOthers = Array.from(firstTopByTask, ([id, top]) => ({ id, top }))
+      .sort((a,b) => a.top - b.top);
+    let insertIdx = visibleOthers.findIndex(item => newTop < item.top);
+    if (insertIdx === -1) insertIdx = visibleOthers.length;
+
+    const visibleOtherIds = visibleOthers.map(item => item.id);
+    const pendingEntries = state.scheduleTasks.filter(t => !t.done);
+    const pendingMap = new Map(pendingEntries.map(t => [t.id, t]));
+    const invisibleIds = pendingEntries
+      .map(t => t.id)
+      .filter(id => id !== taskId && !firstTopByTask.has(id));
+    const newOrderIds = [...visibleOtherIds];
     newOrderIds.splice(insertIdx, 0, taskId);
+    newOrderIds.push(...invisibleIds.filter(id => !newOrderIds.includes(id)));
 
-    // 完了済みタスクは並び替えの対象外(末尾にそのまま残す)。表示中(未完了)のタスクだけ新しい順番に並べ直す。
     const doneEntries = state.scheduleTasks.filter(t => t.done);
-    const pendingMap = Object.fromEntries(state.scheduleTasks.filter(t => !t.done).map(t => [t.id, t]));
-    const reordered = newOrderIds.map(id => pendingMap[id]).filter(Boolean);
-    state.scheduleTasks = [...reordered, ...doneEntries];
-    render(); scheduleSaveDate();
+    state.scheduleTasks = [
+      ...newOrderIds.map(id => pendingMap.get(id)).filter(Boolean),
+      ...doneEntries,
+    ];
+    render();
+    scheduleSaveDate();
   }
-  document.addEventListener('pointermove', onMove);
-  document.addEventListener('pointerup', onUp);
+
+  document.addEventListener('pointermove', onMove, { passive:false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
 }
 
 /* =========================================================
