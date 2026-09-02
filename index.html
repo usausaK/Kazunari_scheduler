@@ -587,6 +587,19 @@ let state = { masterTasks: [], page: 'input', ...defaultDateState(fmtDate(new Da
 
 function resetDateFields(dateStr) { Object.assign(state, defaultDateState(dateStr)); }
 
+function normalizeMasterTasks() {
+  let changed = false;
+  state.masterTasks.forEach((task, index) => {
+    const priority = index + 1;
+    if (task.priority !== priority) changed = true;
+    if (task.done) changed = true;
+    task.priority = priority;
+    // 完了は日付ごとの scheduleTasks だけで管理する。マスターには持ち越さない。
+    task.done = false;
+  });
+  return changed;
+}
+
 function renumberMasterTasks() {
   let changed = false;
   state.masterTasks.forEach((task, index) => {
@@ -612,10 +625,10 @@ function attachMasterListener() {
   unsubscribeMaster = onSnapshot(ref, (snap) => {
     if (snap.metadata.hasPendingWrites) return;
     state.masterTasks = snap.exists() ? (snap.data().tasks || []) : [];
-    const prioritiesChanged = renumberMasterTasks();
+    const masterChanged = normalizeMasterTasks();
     setSync('ok');
     render();
-    if (prioritiesChanged) scheduleSaveMaster();
+    if (masterChanged) scheduleSaveMaster();
   }, (err) => { console.warn('master onSnapshot error', err); setSync('off'); });
 }
 
@@ -1051,7 +1064,6 @@ app.addEventListener('click', (e) => {
     changeDate(1);
   } else if (action === 'run-schedule') {
     const pending = [...state.masterTasks]
-      .filter(t => !t.done)
       .sort((a,b) => (a.priority ?? 999) - (b.priority ?? 999));
     state.scheduleTasks = pending.map(t => ({ id: t.id, name: t.name, priority: t.priority, manualDuration: null, done: false }));
     state.generated = true;
@@ -1069,10 +1081,10 @@ app.addEventListener('click', (e) => {
     const blockEl = e.target.closest('[data-task-id]');
     const taskId = blockEl.dataset.taskId;
     const entry = state.scheduleTasks.find(x => x.id === taskId);
+    // チェック状態はこの日だけに保存し、翌日以降のマスタータスクには反映しない。
     if (entry) entry.done = !entry.done;
-    const master = state.masterTasks.find(x => x.id === taskId);
-    if (master) master.done = entry ? entry.done : !master.done;
-    render(); scheduleSaveDate(); scheduleSaveMaster();
+    render();
+    scheduleSaveDate();
   }
 });
 
