@@ -498,7 +498,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 /* =========================================================
    Firebase setup
@@ -585,7 +585,40 @@ function defaultDateState(dateStr) {
 // state.date 以下の各フィールド: その日固有の会議・業務時間・生成済みスケジュール
 let state = { masterTasks: [], page: 'input', ...defaultDateState(fmtDate(new Date())) };
 
-function resetDateFields(dateStr) { Object.assign(state, defaultDateState(dateStr)); }
+function getWorkTimeSettings(source) {
+  const defaults = defaultDateState(source?.date || fmtDate(new Date()));
+  return {
+    workStart: source?.workStart ?? defaults.workStart,
+    workEnd: source?.workEnd ?? defaults.workEnd,
+    lunchStart: source?.lunchStart ?? defaults.lunchStart,
+    lunchEnd: source?.lunchEnd ?? defaults.lunchEnd,
+  };
+}
+
+function shiftDateString(dateStr, delta) {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  return fmtDate(new Date(y, m - 1, d + delta));
+}
+
+function isNextDate(fromDate, toDate) {
+  return shiftDateString(fromDate, 1) === toDate;
+}
+
+function resetDateFields(dateStr, inheritedWorkTimes = null) {
+  Object.assign(state, defaultDateState(dateStr), inheritedWorkTimes || {});
+}
+
+async function loadPreviousWorkTimeSettings(dateStr) {
+  if (!cloudEnabled || !db) return null;
+  const previousDate = shiftDateString(dateStr, -1);
+  try {
+    const previousSnap = await getDoc(doc(db, 'dailyPlanner', previousDate));
+    return previousSnap.exists() ? getWorkTimeSettings(previousSnap.data()) : null;
+  } catch (e) {
+    console.warn('previous work time load failed', e);
+    return null;
+  }
+}
 
 function normalizeMasterTasks() {
   let changed = false;
@@ -632,16 +665,19 @@ function attachMasterListener() {
   }, (err) => { console.warn('master onSnapshot error', err); setSync('off'); });
 }
 
-function attachDateListener(dateStr) {
+function attachDateListener(dateStr, inheritedWorkTimes = null) {
   if (!cloudEnabled) return;
   if (unsubscribeDate) { unsubscribeDate(); unsubscribeDate = null; }
   const ref = doc(db, 'dailyPlanner', dateStr);
-  unsubscribeDate = onSnapshot(ref, (snap) => {
+  unsubscribeDate = onSnapshot(ref, async (snap) => {
     if (snap.metadata.hasPendingWrites) return;
     if (snap.exists()) {
       Object.assign(state, defaultDateState(dateStr), snap.data(), { date: dateStr });
     } else {
-      resetDateFields(dateStr);
+      const previousWorkTimes = inheritedWorkTimes || await loadPreviousWorkTimeSettings(dateStr);
+      // 読み込み中に別の日へ移動していた場合は、古い結果を画面へ反映しない。
+      if (state.date !== dateStr) return;
+      resetDateFields(dateStr, previousWorkTimes);
     }
     setSync('ok');
     render();
@@ -1112,22 +1148,24 @@ app.addEventListener('input', (e) => {
 
 app.addEventListener('change', (e) => {
   if (e.target.dataset.action === 'set-date') {
+    const currentDate = state.date;
     const newDate = e.target.value;
-    resetDateFields(newDate);
+    const inheritedWorkTimes = isNextDate(currentDate, newDate) ? getWorkTimeSettings(state) : null;
+    resetDateFields(newDate, inheritedWorkTimes);
     state.page = 'input';
     render();
-    if (cloudEnabled) attachDateListener(newDate);
+    if (cloudEnabled) attachDateListener(newDate, inheritedWorkTimes);
   }
 });
 
 function changeDate(delta) {
-  const [y,m,d] = state.date.split('-').map(Number);
-  const nd = new Date(y, m-1, d + delta);
-  const newDate = fmtDate(nd);
-  resetDateFields(newDate);
+  const currentDate = state.date;
+  const newDate = shiftDateString(currentDate, delta);
+  const inheritedWorkTimes = delta === 1 ? getWorkTimeSettings(state) : null;
+  resetDateFields(newDate, inheritedWorkTimes);
   state.page = 'input';
   render();
-  if (cloudEnabled) attachDateListener(newDate);
+  if (cloudEnabled) attachDateListener(newDate, inheritedWorkTimes);
 }
 
 /* =========================================================
